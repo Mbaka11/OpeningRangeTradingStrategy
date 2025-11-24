@@ -1,7 +1,7 @@
 market:
   instrument: "NSXUSD"
   point_value_usd: 80.0
-  tick_size: null # TODO: set e.g. 0.1 / 0.25 / 1.0
+  tick_size: 0.25 # baseline assumption; adjust to your broker's minimum increment
 
 session:
   timezone: "America/New_York"
@@ -14,8 +14,8 @@ session:
   hard_exit_time: "12:00"
 
 costs:
-  fees_per_side_usd: 0.0 # TODO: set realistic commission per side in USD
-  slippage_points: 0.0 # TODO: set conservative slippage in points
+  fees_per_side_usd: 2.0 # baseline round-turn commission per side (adjust to your broker)
+  slippage_points: 0.5 # conservative round-trip slippage in points; tweak after checking fills
 
 data:
   delimiter: ";"
