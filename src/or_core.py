@@ -2,6 +2,23 @@
 
 from __future__ import annotations
 
+"""
+Core logic for the Opening Range (OR) strategy on NSXUSD.
+
+What this module does, in plain language:
+- Load 1-minute OHLCV data for NSXUSD from yearly CSV files in data/raw/.
+- Slice the regular session window (default 09:30–12:00 New York time).
+- Compute the opening range (default 09:30–10:00), then check where the
+  10:22 close sits inside that range.
+- If 10:22 is near the top of the range: go long with predefined stop/target.
+  If near the bottom: go short. Otherwise: stay flat.
+- Simulate the intraday path to see whether the stop, the target, or the
+  time-based exit (12:00) is hit first.
+
+Everything is parameterized via config/instruments.yml and config/strategy.yml
+so non-technical users can tweak times and risk numbers without editing code.
+"""
+
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -82,6 +99,7 @@ def _parse_index(ts: pd.Series) -> pd.DatetimeIndex:
 
 @lru_cache(maxsize=8)
 def _load_year_df(year: int) -> pd.DataFrame:
+    """Load a single year of minute data, normalize types, and index by tz-aware timestamp."""
     fp = YEAR_FILES.get(year)
     if fp is None:
         raise FileNotFoundError(f"No CSV file for year {year} in {DATA_RAW_DIR}")
@@ -113,10 +131,12 @@ def _first_close_at(minute_df: pd.DataFrame, hhmm: str) -> Optional[float]:
 
 def load_day_window(date_str: str):
     """
+    Convenience loader used by notebooks/backtests.
+
     Returns:
-      win:      09:30–12:00 inclusive (DataFrame with OHLC/volume)
-      or_slice: 09:30–10:00 inclusive
-      qc:       dict with OR stats and window integrity checks
+      win:      full trade window (default 09:30–12:00 local NY time)
+      or_slice: opening range (default 09:30–10:00)
+      qc:       quick checks (missing minutes, duplicates, OR highs/lows)
     """
     if isinstance(date_str, (pd.Timestamp,)):
         day = date_str.tz_localize(NY) if date_str.tzinfo is None else date_str.tz_convert(NY)
@@ -177,6 +197,7 @@ def load_day_window(date_str: str):
 
 @dataclass
 class DaySignal:
+    """Signal decision at 10:22 based on where that close sits inside the opening range."""
     date: str
     decision: str                 # "long" | "short" | "none" | "no_signal_missing_1022" | "invalid_or"
     entry_time: str
@@ -193,7 +214,15 @@ class DaySignal:
     notes: str
 
 def compute_signal_for_date(date_str: str, *, win=None, or_slice=None, qc=None) -> DaySignal:
-    """If win/or_slice/qc are not provided, loads them (3.2). Otherwise uses the preloaded ones."""
+    """
+    Decide whether to go long, short, or stay out.
+
+    Logic (matches the research notebook):
+      - Build the opening range from 09:30–10:00.
+      - Find the 10:22 close.
+      - If 10:22 is in the top X% of the range: go long. If in bottom X%: short.
+      - Otherwise: no trade. Missing/invalid data returns explicit failure states.
+    """
     if (win is None) or (or_slice is None) or (qc is None):
         win, or_slice, qc = load_day_window(date_str)
 
@@ -249,6 +278,7 @@ def compute_signal_for_date(date_str: str, *, win=None, or_slice=None, qc=None) 
 
 @dataclass
 class DayExecution:
+    """Execution simulation for the chosen signal (stop/target/time exit)."""
     date: str
     decision: str                 # long | short | none | invalid_or | no_signal_missing_1022
     entry_time: str
@@ -263,6 +293,12 @@ class DayExecution:
     notes: str
 
 def execute_day(date_str: str) -> DayExecution:
+    """
+    Replay the day minute-by-minute after 10:22 and resolve the trade outcome.
+
+    Tie-break is conservative: if a bar touches both stop and target, we assume
+    the stop is hit first. This errs on the side of worse PnL.
+    """
     win, or_slice, qc = load_day_window(date_str)
     sig = compute_signal_for_date(date_str, win=win, or_slice=or_slice, qc=qc)
 

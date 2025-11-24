@@ -12,7 +12,7 @@
 
 ---
 
-## 1) Strategy Summary
+## 1) Strategy Summary (plain English)
 
 **Session window (market time):**
 
@@ -41,6 +41,11 @@
 
 - Start with **\$100,000**. Update daily P\&L into equity curve.
 
+**Configuration knobs (no code editing needed):**
+
+- `config/instruments.yml` controls **market details** (point value, tick size), **session times** (OR window, entry, hard exit), **data format** (delimiter, datetime format, timezone) and **data-quality policies** (skip days with gaps, zero range).
+- `config/strategy.yml` controls **signal logic** (top/bottom percentages), **risk** (stop/take-profit points), **execution assumptions** (one trade/day, fill rules), and **reporting metrics**. Open in any text editor; values are readable and documented inline.
+
 > **Note:** We will finalize exact execution assumptions (use of OHLC for fills, slippage, fees, partial fills, tick size, timezone) before running the baseline.
 
 ---
@@ -55,13 +60,17 @@ datetime;open;high;low;close;volume
 
 **Assumptions to confirm:**
 
-- **Timezone of `datetime`:** _TBD_ (likely **America/New_York** for RTH alignment; confirm source).
+- **Timezone of `datetime`:** currently treated as **America/New_York** (configurable via `source_timezone` if the CSV is in another tz).
 - **Resolution:** 1-minute bars.
-- **Session coverage:** Are pre/post-market bars included? _TBD_
-- **Point definition & tick size:** Confirm that **1 point = 1.0 price unit** on NSXUSD and **tick size** (e.g., 0.1, 0.25, 1.0).
-- **Holidays / half days:** _TBD_ handling.
+- **Session coverage:** Assume **regular session only**; pre/post is ignored. Set `has_premarket: true` if your data includes it.
+- **Point definition & tick size:** Point value set to **\$80**; tick size currently `null` (set the minimum price increment once known, e.g., 0.25).
+- **Holidays / half days:** Not encoded yet; half days will appear as missing minutes in QC.
 
 We will create a small **data contract** validator in the data-audit notebook (column types, monotonic timestamps, missing bars, duplicated bars, session boundaries).
+
+**Known quirks in the provided raw files:**
+
+- Weekend gaps are expected (market closed). 2024 data is otherwise clean for intraday minutes. 2023 has extra intraday holes (missing 10:00-ish hours on some weekdays); consider backfilling before final stats.
 
 ---
 
