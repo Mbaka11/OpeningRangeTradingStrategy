@@ -95,3 +95,22 @@ We will create a small **data contract** validator in the data-audit notebook (c
 - **Net vs. costs** curves.
 
 All plots will include intuitive titles, units, and short captions.
+
+---
+
+## Environment (for live/paper trading setup)
+
+Create a `.env` (ignored by Git) from `.env.example` and fill in your broker creds:
+
+```
+cp .env.example .env
+```
+
+Variables:
+- `OANDA_ACCOUNT_ID` — your OANDA account ID (use practice for paper).
+- `OANDA_API_TOKEN` — API token for the account.
+- `OANDA_ENV` — `practice` or `live` (start with `practice`).
+- `OANDA_INSTRUMENT` — instrument symbol (e.g., `NAS100_USD`).
+- `OANDA_TIMEZONE` — assumed local session timezone (default `America/New_York`).
+
+Keep the `.env` file out of version control; `.gitignore` already excludes it.
