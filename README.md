@@ -96,6 +96,13 @@ We will create a small **data contract** validator in the data-audit notebook (c
 
 All plots will include intuitive titles, units, and short captions.
 
+**Reports folder structure (auto-created by notebooks):**
+- `reports/tables/audit/` — data checks (`valid_days.csv`, `exclusion_log.csv`, schema/tz reports).
+- `reports/tables/backtest/` — baseline backtest outputs (`backtest_daily*.csv`, summaries).
+- `reports/tables/robustness/` — parameter sweeps (entry time, zones, SL/TP).
+- `reports/tables/risk/` — performance/risk diagnostics (perf summary, MC reshuffle, regime stats).
+- Matching `reports/figures/{audit,backtest,robustness,risk}/` for saved charts.
+
 ---
 
 ## Environment (for live/paper trading setup)
@@ -114,3 +121,21 @@ Variables:
 - `OANDA_TIMEZONE` — assumed local session timezone (default `America/New_York`).
 
 Keep the `.env` file out of version control; `.gitignore` already excludes it.
+
+### Suggested repo layout for live/paper bot
+- `notebooks/` — research (keep as-is).
+- `src/` — core strategy logic (reused by live runner).
+- `config/` — YAML configs + `.env` for secrets (not committed).
+- `live/` (new) — bot code:
+  - `live/run_bot.py` — main loop (ingest prices, decide at 10:22, manage orders/flat at 12:00).
+  - `live/broker_oanda.py` — thin OANDA client (paper/live toggle).
+  - `live/data_feed.py` — OANDA candle/tick polling, UTC→NY conversion, minute bar assembly.
+  - `live/logs/` — runtime logs; `live/state/` — checkpoints (e.g., last trade date).
+- `scripts/` — helper scripts (deploy, restart service, download data).
+
+### Deployment checklist (paper → live)
+- Clock/timezone: sync NTP; convert OANDA UTC to NY; handle DST.
+- Symbol mapping: `NAS100_USD` (or broker equivalent), tick size, min stop distance.
+- Risk rails: one trade/day; skip if 10:22/12:00 missing or OR range ≤0; fail-safe flatten at 12:00; cap position size/daily loss.
+- Logging/alerts: log every bar/decision/order/fill; alert on errors/missed exits; keep a heartbeat.
+- Costs/size: use broker-accurate spread/fees in config; set fixed size or vol-based sizing if needed.

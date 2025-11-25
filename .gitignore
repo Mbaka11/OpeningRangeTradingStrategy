@@ -54,9 +54,11 @@ data/interim/*
 # --- Reports & generated artifacts ---
 reports/figures/*
 !reports/figures/.gitkeep
+!reports/figures/**/.gitkeep
 
 reports/tables/*
 !reports/tables/.gitkeep
+!reports/tables/**/.gitkeep
 
 # --- Logs / scratch ---
 logs/
