@@ -119,6 +119,7 @@ Variables:
 - `OANDA_ENV` — `practice` or `live` (start with `practice`).
 - `OANDA_INSTRUMENT` — instrument symbol (e.g., `NAS100_USD`).
 - `OANDA_TIMEZONE` — assumed local session timezone (default `America/New_York`).
+- Twitter posting (optional, via twikit): `TWIKIT_USERNAME`, `TWIKIT_PASSWORD`, `TWIKIT_EMAIL` (optional), `TWIKIT_SESSION_PATH` (cookie cache, gitignored).
 
 Keep the `.env` file out of version control; `.gitignore` already excludes it.
 
