@@ -4,7 +4,7 @@
 - One trade/day, SL/TP attached, hard flat at 12:00.
 - Log-only by default (set PLACE_ORDERS=True to call OANDA).
 """
-import time
+import time, os
 from datetime import datetime
 import pytz
 import pandas as pd
@@ -19,6 +19,7 @@ logger = setup_logger("bot")
 PLACE_ORDERS = False  # toggle to True when ready
 POSITION_SIZE = INSTRUMENTS.get("market", {}).get("position_size", 1.0)
 POINT_VAL = INSTRUMENTS.get("market", {}).get("point_value_usd", 80.0)
+REPLAY_FILE = os.getenv("REPLAY_FILE")  # if set, run once on this CSV instead of live polling
 
 OR_START = INSTRUMENTS.get("session", {}).get("or_window", {}).get("start", "09:30")
 OR_END   = INSTRUMENTS.get("session", {}).get("or_window", {}).get("end_inclusive", "10:00")
@@ -104,7 +105,7 @@ def main_loop():
             side, entry, sl, tp = sig
             logger.info(f"Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
             summary["signals"] += 1
-            summary["last_signal"] = f\"{trade_date} {side} {entry:.2f}\"
+            summary["last_signal"] = f"{trade_date} {side} {entry:.2f}"
 
             if PLACE_ORDERS:
                 units = int(POSITION_SIZE) if side == "long" else -int(POSITION_SIZE)
@@ -142,4 +143,29 @@ def main_loop():
 
 
 if __name__ == "__main__":
-    main_loop()
+    if REPLAY_FILE:
+        logger.info(f"Replay mode from {REPLAY_FILE}")
+        df = pd.read_csv(REPLAY_FILE)
+        # Ensure time_ny is parsed and tz-aware
+        if "time_ny" in df.columns:
+            df["time_ny"] = pd.to_datetime(df["time_ny"]).dt.tz_convert(NY)
+        elif "time" in df.columns:
+            df["time_ny"] = pd.to_datetime(df["time"]).dt.tz_localize("UTC").dt.tz_convert(NY)
+        df = df.sort_values("time_ny")
+        df.index = pd.to_datetime(df["time_ny"])
+        slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
+        slice_or  = data_feed.latest_slice(df, OR_START, OR_END)
+        has_entry = any(slice_win.index.time == pd.Timestamp(ENTRY_T).time())
+        has_exit  = any(slice_win.index.time == pd.Timestamp(EXIT_T).time())
+        if not has_entry or not has_exit:
+            logger.warning("Replay: missing entry/exit bar; skipping")
+        else:
+            sig, reason = compute_signal(slice_win, slice_or)
+            if sig is None:
+                logger.info(f"Replay: no trade ({reason})")
+            else:
+                side, entry, sl, tp = sig
+                logger.info(f"Replay: Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
+        logger.info("Replay complete.")
+    else:
+        main_loop()
