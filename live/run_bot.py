@@ -4,11 +4,14 @@
 - One trade/day, SL/TP attached, hard flat at 12:00.
 - Log-only by default (set PLACE_ORDERS=True to call OANDA).
 """
-import time, os
+import time, os, sys
 from datetime import datetime
 import pytz
 import pandas as pd
 from pathlib import Path
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 from live import data_feed, broker_oanda
 from live.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
 from live.logging_utils import setup_logger
