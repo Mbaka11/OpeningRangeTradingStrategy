@@ -35,7 +35,8 @@ def fetch_m1(count: int = 120):
     data = resp.json().get("candles", [])
     records = []
     for c in data:
-        ts = datetime.fromisoformat(c["time"].replace("Z", "+00:00"))
+        # OANDA times can include nanosecond precision; let pandas handle it.
+        ts = pd.to_datetime(c["time"], utc=True).to_pydatetime()
         mid = c.get("mid", {})
         records.append({
             "time_utc": ts,
