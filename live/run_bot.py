@@ -11,9 +11,11 @@ import pandas as pd
 from pathlib import Path
 from live import data_feed, broker_oanda
 from live.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
+from live.logging_utils import setup_logger
 from src import or_core
 
 NY = pytz.timezone(OANDA_TIMEZONE)
+logger = setup_logger("bot")
 PLACE_ORDERS = False  # toggle to True when ready
 POSITION_SIZE = INSTRUMENTS.get("market", {}).get("position_size", 1.0)
 POINT_VAL = INSTRUMENTS.get("market", {}).get("point_value_usd", 80.0)
@@ -30,11 +32,6 @@ TP_PTS   = STRATEGY.get("parameters", {}).get("risk", {}).get("take_profit_point
 
 def now_ny():
     return datetime.now(tz=NY)
-
-
-def log(msg):
-    ts = now_ny().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{ts} NY] {msg}")
 
 
 def compute_signal(win_df: pd.DataFrame, or_df: pd.DataFrame):
@@ -56,11 +53,21 @@ def compute_signal(win_df: pd.DataFrame, or_df: pd.DataFrame):
 
 def main_loop():
     last_trade_date = None
+    last_heartbeat_min = None
+    summary = {"signals": 0, "orders": 0, "skipped": 0, "errors": 0, "last_signal": None}
+    summary_path = Path(__file__).resolve().parent / "logs" / "summaries"
+    summary_path.mkdir(parents=True, exist_ok=True)
+    summary_flushed_for = None
     while True:
         try:
             ny_now = now_ny()
             if ny_now.weekday() >= 5:  # skip weekends
                 time.sleep(60); continue
+
+            # Heartbeat once per minute
+            if last_heartbeat_min != ny_now.minute:
+                logger.info("HEARTBEAT alive")
+                last_heartbeat_min = ny_now.minute
 
             df = data_feed.fetch_m1(count=200)
             slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
@@ -74,7 +81,9 @@ def main_loop():
             has_entry = any(slice_win.index.time == pd.Timestamp(ENTRY_T).time())
             has_exit  = any(slice_win.index.time == pd.Timestamp(EXIT_T).time())
             if not has_entry or not has_exit:
-                log("Skipping (missing entry/exit bar)"); time.sleep(60); continue
+                logger.warning("Skipping (missing entry/exit bar)")
+                summary["skipped"] += 1
+                time.sleep(60); continue
 
             trade_date = ny_now.date()
             if last_trade_date == trade_date:
@@ -86,17 +95,24 @@ def main_loop():
             # compute signal
             sig, reason = compute_signal(slice_win, slice_or)
             if sig is None:
-                log(f"No trade ({reason})"); last_trade_date = trade_date; time.sleep(60); continue
+                logger.info(f"No trade ({reason})")
+                last_trade_date = trade_date
+                summary["skipped"] += 1
+                time.sleep(60)
+                continue
 
             side, entry, sl, tp = sig
-            log(f"Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
+            logger.info(f"Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
+            summary["signals"] += 1
+            summary["last_signal"] = f\"{trade_date} {side} {entry:.2f}\"
 
             if PLACE_ORDERS:
                 units = int(POSITION_SIZE) if side == "long" else -int(POSITION_SIZE)
                 resp = broker_oanda.submit_market_with_sl_tp(units=units, sl_price=sl, tp_price=tp)
-                log(f"Order placed: {resp}")
+                logger.info(f"Order placed: {resp}")
+                summary["orders"] += 1
             else:
-                log("PLACE_ORDERS=False -> log-only mode")
+                logger.info("PLACE_ORDERS=False -> log-only mode")
 
             last_trade_date = trade_date
 
@@ -105,10 +121,24 @@ def main_loop():
                 time.sleep(30)
             if PLACE_ORDERS:
                 closed = broker_oanda.close_all_trades()
-                log(f"Hard exit close_all: {closed}")
+                logger.info(f"Hard exit close_all: {closed}")
         except Exception as e:
-            log(f"Error: {e}")
+            logger.exception(f"Error: {e}")
+            summary["errors"] += 1
             time.sleep(60)
+        finally:
+            # Flush summary after exit window (post 12:05 NY) once per trade_date
+            ny_now = now_ny()
+            after_exit = ny_now.time() >= pd.Timestamp(EXIT_T).time()
+            if after_exit and last_trade_date and summary_flushed_for != last_trade_date:
+                fname = summary_path / f"{last_trade_date}_summary.log"
+                msg = (f"date={last_trade_date} signals={summary['signals']} orders={summary['orders']} "
+                       f"skipped={summary['skipped']} errors={summary['errors']} last={summary['last_signal']}")
+                with open(fname, "a", encoding="utf-8") as f:
+                    f.write(msg + "\n")
+                logger.info(f"Wrote daily summary: {msg}")
+                summary = {"signals": 0, "orders": 0, "skipped": 0, "errors": 0, "last_signal": None}
+                summary_flushed_for = last_trade_date
 
 
 if __name__ == "__main__":

@@ -8,8 +8,10 @@ import pandas as pd
 import pytz
 
 from live.config import OANDA_API_BASE, OANDA_API_TOKEN, OANDA_INSTRUMENT, OANDA_TIMEZONE
+from live.logging_utils import setup_logger
 
 NY = pytz.timezone(OANDA_TIMEZONE)
+logger = setup_logger("data_feed")
 
 
 def _headers():
@@ -46,6 +48,7 @@ def fetch_m1(count: int = 120):
         })
     df = pd.DataFrame(records)
     df = df.sort_values("time_ny").reset_index(drop=True)
+    logger.debug(f"Fetched {len(df)} M1 candles (latest NY {df['time_ny'].iloc[-1] if not df.empty else 'none'})")
     return df
 
 
