@@ -4,7 +4,7 @@
 - One trade/day, SL/TP attached, hard flat at 12:00.
 - Log-only by default (set PLACE_ORDERS=True to call OANDA).
 """
-import time, os, sys
+import time, os, sys, csv
 from datetime import datetime, timedelta
 import pytz
 import pandas as pd
@@ -126,6 +126,7 @@ def main_loop():
     summary = {"signals": 0, "orders": 0, "skipped": 0, "errors": 0, "last_signal": None}
     summary_path = Path(__file__).resolve().parent / "logs" / "summaries"
     summary_path.mkdir(parents=True, exist_ok=True)
+    trade_log_path = summary_path / "trade_days.csv"
     summary_flushed_for = None
     session_announced_for = None
     start_account_snapshot = None
@@ -299,6 +300,34 @@ def main_loop():
                 msg = (f"date={last_trade_date} signals={summary['signals']} orders={summary['orders']} "
                        f"skipped={summary['skipped']} errors={summary['errors']} last={summary['last_signal']}{pnl_nav_str}")
                 logger.info(f"SESSION_END {msg}")
+                # Persist daily summary CSV for quick review
+                headers = [
+                    "date", "signals", "orders", "skipped", "errors", "last_signal",
+                    "balance_start", "nav_start", "balance_end", "nav_end",
+                    "pnl_balance", "pnl_nav", "open_trades_end", "currency",
+                ]
+                row = {
+                    "date": last_trade_date,
+                    "signals": summary["signals"],
+                    "orders": summary["orders"],
+                    "skipped": summary["skipped"],
+                    "errors": summary["errors"],
+                    "last_signal": summary["last_signal"],
+                    "balance_start": start_account_snapshot.get("balance") if start_account_snapshot else None,
+                    "nav_start": start_account_snapshot.get("nav") if start_account_snapshot else None,
+                    "balance_end": end_snapshot.get("balance") if end_snapshot else None,
+                    "nav_end": end_snapshot.get("nav") if end_snapshot else None,
+                    "pnl_balance": pnl_bal if start_account_snapshot and end_snapshot else None,
+                    "pnl_nav": pnl_nav if start_account_snapshot and end_snapshot else None,
+                    "open_trades_end": end_snapshot.get("open_trade_count") if end_snapshot else None,
+                    "currency": end_snapshot.get("currency") if end_snapshot else None,
+                }
+                write_header = not trade_log_path.exists()
+                with open(trade_log_path, "a", newline="", encoding="utf-8") as f:
+                    writer = csv.DictWriter(f, fieldnames=headers)
+                    if write_header:
+                        writer.writeheader()
+                    writer.writerow(row)
                 with open(fname, "a", encoding="utf-8") as f:
                     f.write(msg + "\n")
                 logger.info(f"Wrote daily summary: {msg}")
