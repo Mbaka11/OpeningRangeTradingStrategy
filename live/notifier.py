@@ -1,9 +1,8 @@
-"""Notifier for posting trade updates via Twitter/X API (v1.1 statuses/update).
+"""Notifier for posting trade updates via Twitter/X API v2 (tweepy Client).
 Logs and skips if credentials are missing.
 """
 import os
-import requests
-from requests_oauthlib import OAuth1
+import tweepy
 from dotenv import load_dotenv
 from live.logging_utils import setup_logger
 
@@ -16,7 +15,7 @@ ACCESS_TOKEN = os.getenv("TWITTER_ACCESS_TOKEN", "")
 ACCESS_SECRET = os.getenv("TWITTER_ACCESS_SECRET", "")
 
 
-def can_post_api() -> bool:
+def can_post() -> bool:
     ok = all([API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_SECRET])
     if not ok:
         logger.info("Notifier: Twitter API creds missing; set TWITTER_* env vars.")
@@ -24,18 +23,19 @@ def can_post_api() -> bool:
 
 
 def notify_trade(message: str):
-    if not can_post_api():
+    if not can_post():
         logger.info(f"Notifier: would post (no creds): {message}")
         return {"status": "skipped", "reason": "no_credentials"}
-    url = "https://api.twitter.com/1.1/statuses/update.json"
-    auth = OAuth1(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_SECRET)
     try:
-        resp = requests.post(url, auth=auth, data={"status": message}, timeout=10)
-        if resp.status_code != 200:
-            logger.warning(f"Notifier: API post failed ({resp.status_code}): {resp.text}")
-            return {"status": "error", "code": resp.status_code, "body": resp.text}
-        logger.info("Notifier: tweet posted via API")
-        return {"status": "posted", "via": "api"}
+        client = tweepy.Client(
+            consumer_key=API_KEY,
+            consumer_secret=API_SECRET,
+            access_token=ACCESS_TOKEN,
+            access_token_secret=ACCESS_SECRET,
+        )
+        resp = client.create_tweet(text=message)
+        logger.info("Notifier: tweet posted via v2 client")
+        return {"status": "posted", "via": "api", "id": getattr(resp, 'data', {})}
     except Exception as e:
-        logger.exception(f"Notifier: exception posting tweet: {e}")
+        logger.warning(f"Notifier: tweet failed: {e}")
         return {"status": "error", "reason": str(e)}

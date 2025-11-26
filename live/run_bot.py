@@ -188,6 +188,10 @@ if __name__ == "__main__":
             else:
                 side, entry, sl, tp = sig
                 logger.info(f"Replay: Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
+                try:
+                    notifier.notify_trade(f"Replay {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} ({REPLAY_FILE})")
+                except Exception:
+                    logger.exception("Notifier error while posting replay signal")
         logger.info("Replay complete.")
     else:
         main_loop()
