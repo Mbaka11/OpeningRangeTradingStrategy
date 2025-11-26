@@ -1,0 +1,13 @@
+venv
+__pycache__
+*.pyc
+*.pyo
+*.log
+*.ipynb
+.env
+.git
+.gitignore
+data
+reports
+notebooks
+live/logs
