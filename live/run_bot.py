@@ -5,7 +5,7 @@
 - Log-only by default (set PLACE_ORDERS=True to call OANDA).
 """
 import time, os, sys
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import pandas as pd
 from pathlib import Path
@@ -108,7 +108,7 @@ def simulate_exit(win_df: pd.DataFrame, side: str, entry: float, sl: float, tp: 
 
 def main_loop():
     last_trade_date = None
-    last_heartbeat_min = None
+    last_heartbeat_at = None
     summary = {"signals": 0, "orders": 0, "skipped": 0, "errors": 0, "last_signal": None}
     summary_path = Path(__file__).resolve().parent / "logs" / "summaries"
     summary_path.mkdir(parents=True, exist_ok=True)
@@ -125,10 +125,10 @@ def main_loop():
             if ny_now.weekday() >= 5:  # skip weekends
                 time.sleep(60); continue
 
-            # Heartbeat once per minute
-            if last_heartbeat_min != ny_now.minute:
+            # Heartbeat every 10 minutes
+            if (not last_heartbeat_at) or (ny_now - last_heartbeat_at >= timedelta(minutes=10)):
                 logger.info("HEARTBEAT alive")
-                last_heartbeat_min = ny_now.minute
+                last_heartbeat_at = ny_now
 
             df = data_feed.fetch_m1(count=200)
             slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
