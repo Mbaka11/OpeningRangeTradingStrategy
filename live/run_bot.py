@@ -13,6 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from live import data_feed, broker_oanda
+from live import notifier
 from live.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
 from live.logging_utils import setup_logger
 from src import or_core
@@ -62,6 +63,12 @@ def main_loop():
     summary_path = Path(__file__).resolve().parent / "logs" / "summaries"
     summary_path.mkdir(parents=True, exist_ok=True)
     summary_flushed_for = None
+
+    # Pre-open status
+    try:
+        notifier.notify_trade(f"Bot ready (orders={'ON' if PLACE_ORDERS else 'OFF'}), watching OR {OR_START}-{OR_END} NY, entry {ENTRY_T}, exit {EXIT_T}.")
+    except Exception:
+        logger.exception("Notifier error while posting pre-open status")
     while True:
         try:
             ny_now = now_ny()
@@ -115,6 +122,10 @@ def main_loop():
                 resp = broker_oanda.submit_market_with_sl_tp(units=units, sl_price=sl, tp_price=tp)
                 logger.info(f"Order placed: {resp}")
                 summary["orders"] += 1
+                try:
+                    notifier.notify_trade(f"Paper trade {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} ({trade_date})")
+                except Exception:
+                    logger.exception("Notifier error while posting trade")
             else:
                 logger.info("PLACE_ORDERS=False -> log-only mode")
 
@@ -126,6 +137,10 @@ def main_loop():
             if PLACE_ORDERS:
                 closed = broker_oanda.close_all_trades()
                 logger.info(f"Hard exit close_all: {closed}")
+                try:
+                    notifier.notify_trade(f"Paper trade exit @ {EXIT_T} NY; forced flat. Details: {closed}")
+                except Exception:
+                    logger.exception("Notifier error while posting exit")
         except Exception as e:
             logger.exception(f"Error: {e}")
             summary["errors"] += 1
@@ -141,6 +156,10 @@ def main_loop():
                 with open(fname, "a", encoding="utf-8") as f:
                     f.write(msg + "\n")
                 logger.info(f"Wrote daily summary: {msg}")
+                try:
+                    notifier.notify_trade(f"Daily recap {last_trade_date}: signals={summary['signals']} orders={summary['orders']} skipped={summary['skipped']} errors={summary['errors']}")
+                except Exception:
+                    logger.exception("Notifier error while posting recap")
                 summary = {"signals": 0, "orders": 0, "skipped": 0, "errors": 0, "last_signal": None}
                 summary_flushed_for = last_trade_date
 
