@@ -43,6 +43,17 @@ def now_ny():
     return datetime.now(tz=NY)
 
 
+def format_session_overview() -> str:
+    """Human-friendly summary of the configured session for logs/alerts."""
+    return (
+        f"Session OR {OR_START}-{OR_END} NY, entry {ENTRY_T}, exit {EXIT_T}; "
+        f"instrument={broker_oanda.OANDA_INSTRUMENT} env={broker_oanda.OANDA_API_BASE.split('//')[1].split('/')[0]}; "
+        f"size={POSITION_SIZE} point_val=${POINT_VAL:.2f}; "
+        f"zones top_pct={TOP_PCT} bottom_pct={BOT_PCT} SL={SL_PTS} TP={TP_PTS} "
+        f"orders={'ON' if PLACE_ORDERS else 'OFF'}"
+    )
+
+
 def compute_signal(win_df: pd.DataFrame, or_df: pd.DataFrame):
     # replicate or_core decision using latest dataframes
     or_high = or_df["high"].max(); or_low = or_df["low"].min()
@@ -117,10 +128,13 @@ def main_loop():
     summary_path.mkdir(parents=True, exist_ok=True)
     summary_flushed_for = None
     session_announced_for = None
+    start_account_snapshot = None
 
     # Pre-open status
     try:
-        notifier.notify_trade(f"Bot ready (orders={'ON' if PLACE_ORDERS else 'OFF'}), watching OR {OR_START}-{OR_END} NY, entry {ENTRY_T}, exit {EXIT_T}.")
+        overview = format_session_overview()
+        logger.info(f"STARTUP {overview}")
+        notifier.notify_trade(f"Bot ready: {overview}")
     except Exception:
         logger.exception("Notifier error while posting pre-open status")
     while True:
@@ -131,8 +145,20 @@ def main_loop():
 
             in_session_window = OR_START_T <= ny_now.time() <= EXIT_T_T
             if in_session_window and session_announced_for != ny_now.date():
-                logger.info(f"Session window active {OR_START}-{EXIT_T} NY; heartbeats every 10m.")
+                logger.info(f"SESSION_START {format_session_overview()}")
                 session_announced_for = ny_now.date()
+                try:
+                    start_account_snapshot = broker_oanda.get_account_summary()
+                    logger.info(
+                        "SESSION_ACCOUNT_START "
+                        f"balance={start_account_snapshot['balance']:.2f} "
+                        f"nav={start_account_snapshot['nav']:.2f} "
+                        f"utpl={start_account_snapshot['unrealized_pl']:.2f} "
+                        f"open_trades={start_account_snapshot['open_trade_count']} "
+                        f"ccy={start_account_snapshot['currency']}"
+                    )
+                except Exception:
+                    logger.exception("Could not fetch account summary at session start")
 
             # Heartbeat every 10 minutes
             if (not last_heartbeat_at) or (ny_now - last_heartbeat_at >= timedelta(minutes=10)):
@@ -211,17 +237,50 @@ def main_loop():
             after_exit = ny_now.time() >= EXIT_T_T
             if after_exit and last_trade_date and summary_flushed_for != last_trade_date:
                 fname = summary_path / f"{last_trade_date}_summary.log"
+                end_snapshot = None
+                try:
+                    end_snapshot = broker_oanda.get_account_summary()
+                    pnl_nav = None
+                    pnl_bal = None
+                    if start_account_snapshot:
+                        pnl_nav = end_snapshot["nav"] - start_account_snapshot.get("nav", 0.0)
+                        pnl_bal = end_snapshot["balance"] - start_account_snapshot.get("balance", 0.0)
+                    pnl_nav_disp = f"{pnl_nav:+.2f}" if pnl_nav is not None else "n/a"
+                    pnl_bal_disp = f"{pnl_bal:+.2f}" if pnl_bal is not None else "n/a"
+                    logger.info(
+                        "SESSION_ACCOUNT_END "
+                        f"balance={end_snapshot['balance']:.2f} "
+                        f"nav={end_snapshot['nav']:.2f} "
+                        f"utpl={end_snapshot['unrealized_pl']:.2f} "
+                        f"open_trades={end_snapshot['open_trade_count']} "
+                        f"ccy={end_snapshot['currency']} "
+                        f"pnl_nav={pnl_nav_disp} "
+                        f"pnl_bal={pnl_bal_disp}"
+                    )
+                except Exception:
+                    logger.exception("Could not fetch account summary at session end")
+                pnl_nav_str = ""
+                if end_snapshot and start_account_snapshot:
+                    pnl_nav = end_snapshot["nav"] - start_account_snapshot.get("nav", 0.0)
+                    pnl_bal = end_snapshot["balance"] - start_account_snapshot.get("balance", 0.0)
+                    pnl_nav_str = f" nav {start_account_snapshot.get('nav', 0.0):.2f}->{end_snapshot['nav']:.2f} ({pnl_nav:+.2f})"
+                    pnl_nav_str += f" bal {start_account_snapshot.get('balance', 0.0):.2f}->{end_snapshot['balance']:.2f} ({pnl_bal:+.2f})"
                 msg = (f"date={last_trade_date} signals={summary['signals']} orders={summary['orders']} "
-                       f"skipped={summary['skipped']} errors={summary['errors']} last={summary['last_signal']}")
+                       f"skipped={summary['skipped']} errors={summary['errors']} last={summary['last_signal']}{pnl_nav_str}")
+                logger.info(f"SESSION_END {msg}")
                 with open(fname, "a", encoding="utf-8") as f:
                     f.write(msg + "\n")
                 logger.info(f"Wrote daily summary: {msg}")
                 try:
-                    notifier.notify_trade(f"Daily recap {last_trade_date}: signals={summary['signals']} orders={summary['orders']} skipped={summary['skipped']} errors={summary['errors']}")
+                    notifier.notify_trade(
+                        f"Daily recap {last_trade_date}: signals={summary['signals']} orders={summary['orders']} "
+                        f"skipped={summary['skipped']} errors={summary['errors']}{pnl_nav_str}"
+                    )
                 except Exception:
                     logger.exception("Notifier error while posting recap")
                 summary = {"signals": 0, "orders": 0, "skipped": 0, "errors": 0, "last_signal": None}
                 summary_flushed_for = last_trade_date
+                start_account_snapshot = None
 
 
 if __name__ == "__main__":

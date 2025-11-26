@@ -56,3 +56,34 @@ def get_open_trades():
     trades = resp.json().get("trades", [])
     logger.debug(f"Open trades: {len(trades)}")
     return trades
+
+
+def get_account_summary():
+    """Fetch account summary (balance, NAV, open trade count)."""
+    url = f"{OANDA_API_BASE}/accounts/{OANDA_ACCOUNT_ID}/summary"
+    resp = requests.get(url, headers=_headers(), timeout=10)
+    resp.raise_for_status()
+    acct = resp.json().get("account", {})
+    # Safely cast to floats/ints; OANDA returns strings
+    def _f(k, default=0.0):
+        try:
+            return float(acct.get(k, default))
+        except Exception:
+            return default
+
+    def _i(k, default=0):
+        try:
+            return int(acct.get(k, default))
+        except Exception:
+            return default
+
+    summary = {
+        "balance": _f("balance"),
+        "nav": _f("NAV"),
+        "unrealized_pl": _f("unrealizedPL"),
+        "currency": acct.get("currency", ""),
+        "open_trade_count": _i("openTradeCount"),
+        "last_transaction_id": acct.get("lastTransactionID"),
+    }
+    logger.debug(f"Account summary: nav={summary['nav']} bal={summary['balance']} utpl={summary['unrealized_pl']}")
+    return summary
