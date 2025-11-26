@@ -34,6 +34,10 @@ BOT_PCT  = STRATEGY.get("parameters", {}).get("zones", {}).get("bottom_pct", 0.3
 SL_PTS   = STRATEGY.get("parameters", {}).get("risk", {}).get("stop_loss_points", 25)
 TP_PTS   = STRATEGY.get("parameters", {}).get("risk", {}).get("take_profit_points", 75)
 
+OR_START_T = pd.Timestamp(OR_START).time()
+ENTRY_T_T = pd.Timestamp(ENTRY_T).time()
+EXIT_T_T = pd.Timestamp(EXIT_T).time()
+
 
 def now_ny():
     return datetime.now(tz=NY)
@@ -45,7 +49,7 @@ def compute_signal(win_df: pd.DataFrame, or_df: pd.DataFrame):
     or_rng = or_high - or_low
     bottom_cut = or_low + BOT_PCT * or_rng
     top_cut    = or_high - TOP_PCT * or_rng
-    e = win_df.loc[win_df.index.time == pd.Timestamp(ENTRY_T).time(), "close"]
+    e = win_df.loc[win_df.index.time == ENTRY_T_T, "close"]
     if e.empty:
         return None, "missing_entry"
     entry = float(e.iloc[0])
@@ -58,8 +62,7 @@ def compute_signal(win_df: pd.DataFrame, or_df: pd.DataFrame):
 
 def simulate_exit(win_df: pd.DataFrame, side: str, entry: float, sl: float, tp: float):
     """Walk bars after entry to find TP/SL/time exit (similar to execute_day)."""
-    entry_t = pd.Timestamp(ENTRY_T).time()
-    path = win_df.loc[win_df.index.time > entry_t].copy()
+    path = win_df.loc[win_df.index.time > ENTRY_T_T].copy()
     exit_ts = None
     exit_px = None
     exit_reason = None
@@ -113,6 +116,7 @@ def main_loop():
     summary_path = Path(__file__).resolve().parent / "logs" / "summaries"
     summary_path.mkdir(parents=True, exist_ok=True)
     summary_flushed_for = None
+    session_announced_for = None
 
     # Pre-open status
     try:
@@ -124,6 +128,11 @@ def main_loop():
             ny_now = now_ny()
             if ny_now.weekday() >= 5:  # skip weekends
                 time.sleep(60); continue
+
+            in_session_window = OR_START_T <= ny_now.time() <= EXIT_T_T
+            if in_session_window and session_announced_for != ny_now.date():
+                logger.info(f"Session window active {OR_START}-{EXIT_T} NY; heartbeats every 10m.")
+                session_announced_for = ny_now.date()
 
             # Heartbeat every 10 minutes
             if (not last_heartbeat_at) or (ny_now - last_heartbeat_at >= timedelta(minutes=10)):
@@ -139,18 +148,19 @@ def main_loop():
             slice_win.index = pd.to_datetime(slice_win["time_ny"])
             slice_or.index  = pd.to_datetime(slice_or["time_ny"])
 
-            has_entry = any(slice_win.index.time == pd.Timestamp(ENTRY_T).time())
-            has_exit  = any(slice_win.index.time == pd.Timestamp(EXIT_T).time())
+            has_entry = any(slice_win.index.time == ENTRY_T_T)
+            has_exit  = any(slice_win.index.time == EXIT_T_T)
             if not has_entry or not has_exit:
-                logger.warning("Skipping (missing entry/exit bar)")
-                summary["skipped"] += 1
+                if in_session_window:
+                    logger.warning("Skipping (missing entry/exit bar)")
+                    summary["skipped"] += 1
                 time.sleep(60); continue
 
             trade_date = ny_now.date()
             if last_trade_date == trade_date:
                 time.sleep(30); continue
 
-            if ny_now.time() < pd.Timestamp(ENTRY_T).time():
+            if ny_now.time() < ENTRY_T_T:
                 time.sleep(30); continue
 
             # compute signal
@@ -182,7 +192,7 @@ def main_loop():
             last_trade_date = trade_date
 
             # monitor until 12:00 for flat (simplified: if PLACE_ORDERS False, just sleep)
-            while now_ny().time() < pd.Timestamp(EXIT_T).time():
+            while now_ny().time() < EXIT_T_T:
                 time.sleep(30)
             if PLACE_ORDERS:
                 closed = broker_oanda.close_all_trades()
@@ -198,7 +208,7 @@ def main_loop():
         finally:
             # Flush summary after exit window (post 12:05 NY) once per trade_date
             ny_now = now_ny()
-            after_exit = ny_now.time() >= pd.Timestamp(EXIT_T).time()
+            after_exit = ny_now.time() >= EXIT_T_T
             if after_exit and last_trade_date and summary_flushed_for != last_trade_date:
                 fname = summary_path / f"{last_trade_date}_summary.log"
                 msg = (f"date={last_trade_date} signals={summary['signals']} orders={summary['orders']} "
@@ -227,8 +237,8 @@ if __name__ == "__main__":
         df.index = pd.to_datetime(df["time_ny"])
         slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
         slice_or  = data_feed.latest_slice(df, OR_START, OR_END)
-        has_entry = any(slice_win.index.time == pd.Timestamp(ENTRY_T).time())
-        has_exit  = any(slice_win.index.time == pd.Timestamp(EXIT_T).time())
+        has_entry = any(slice_win.index.time == ENTRY_T_T)
+        has_exit  = any(slice_win.index.time == EXIT_T_T)
         if not has_entry or not has_exit:
             logger.warning("Replay: missing entry/exit bar; skipping")
             try:
