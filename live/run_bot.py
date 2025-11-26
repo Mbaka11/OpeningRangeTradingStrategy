@@ -20,7 +20,7 @@ from src import or_core
 
 NY = pytz.timezone(OANDA_TIMEZONE)
 logger = setup_logger("bot")
-PLACE_ORDERS = False  # toggle to True when ready
+PLACE_ORDERS = True  # toggle to True when ready
 POSITION_SIZE = INSTRUMENTS.get("market", {}).get("position_size", 1.0)
 POINT_VAL = INSTRUMENTS.get("market", {}).get("point_value_usd", 80.0)
 REPLAY_FILE = os.getenv("REPLAY_FILE")  # if set, run once on this CSV instead of live polling
@@ -54,6 +54,56 @@ def compute_signal(win_df: pd.DataFrame, or_df: pd.DataFrame):
     elif entry <= bottom_cut:
         return ("short", entry, entry + SL_PTS, entry - TP_PTS), "short"
     return None, "none"
+
+
+def simulate_exit(win_df: pd.DataFrame, side: str, entry: float, sl: float, tp: float):
+    """Walk bars after entry to find TP/SL/time exit (similar to execute_day)."""
+    entry_t = pd.Timestamp(ENTRY_T).time()
+    path = win_df.loc[win_df.index.time > entry_t].copy()
+    exit_ts = None
+    exit_px = None
+    exit_reason = None
+
+    if side == "long":
+        for ts, row in path.iterrows():
+            hi, lo = float(row["high"]), float(row["low"])
+            touched_tp = hi >= tp
+            touched_sl = lo <= sl
+            if touched_tp and touched_sl:
+                exit_ts, exit_px, exit_reason = ts, sl, "sl"; break
+            elif touched_sl:
+                exit_ts, exit_px, exit_reason = ts, sl, "sl"; break
+            elif touched_tp:
+                exit_ts, exit_px, exit_reason = ts, tp, "tp"; break
+    elif side == "short":
+        for ts, row in path.iterrows():
+            hi, lo = float(row["high"]), float(row["low"])
+            touched_tp = lo <= tp
+            touched_sl = hi >= sl
+            if touched_tp and touched_sl:
+                exit_ts, exit_px, exit_reason = ts, sl, "sl"; break
+            elif touched_sl:
+                exit_ts, exit_px, exit_reason = ts, sl, "sl"; break
+            elif touched_tp:
+                exit_ts, exit_px, exit_reason = ts, tp, "tp"; break
+
+    if exit_ts is None:
+        if not path.empty:
+            exit_ts = path.index.max()
+            exit_px = float(path.loc[exit_ts, "close"])
+            exit_reason = "time"
+    pnl_pts = None
+    pnl_usd = None
+    if exit_px is not None:
+        pnl_pts = float(exit_px - entry) if side == "long" else float(entry - exit_px)
+        pnl_usd = pnl_pts * POINT_VAL * POSITION_SIZE
+    return {
+        "exit_ts": exit_ts,
+        "exit_px": exit_px,
+        "exit_reason": exit_reason,
+        "pnl_pts": pnl_pts,
+        "pnl_usd": pnl_usd,
+    }
 
 
 def main_loop():
@@ -181,15 +231,29 @@ if __name__ == "__main__":
         has_exit  = any(slice_win.index.time == pd.Timestamp(EXIT_T).time())
         if not has_entry or not has_exit:
             logger.warning("Replay: missing entry/exit bar; skipping")
+            try:
+                notifier.notify_trade(f"[REPLAY] Skipped {REPLAY_FILE}: missing entry/exit bar")
+            except Exception:
+                logger.exception("Notifier error while posting replay skip")
         else:
             sig, reason = compute_signal(slice_win, slice_or)
             if sig is None:
                 logger.info(f"Replay: no trade ({reason})")
+                try:
+                    notifier.notify_trade(f"[REPLAY] No trade ({reason}) from {REPLAY_FILE}")
+                except Exception:
+                    logger.exception("Notifier error while posting replay no-trade")
             else:
                 side, entry, sl, tp = sig
                 logger.info(f"Replay: Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
+                # Simulate exit/PnL on the replay window
+                res = simulate_exit(slice_win, side, entry, sl, tp)
+                logger.info(f"Replay: Exit {res['exit_reason']} @ {res['exit_px']} | pnl_pts={res['pnl_pts']} pnl_usd={res['pnl_usd']}")
                 try:
-                    notifier.notify_trade(f"Replay {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} ({REPLAY_FILE})")
+                    msg = (f"[REPLAY] {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} "
+                           f"-> exit {res['exit_reason']} @ {res['exit_px']} "
+                           f"pnl {res['pnl_pts']} pts / ${res['pnl_usd']}")
+                    notifier.notify_trade(msg)
                 except Exception:
                     logger.exception("Notifier error while posting replay signal")
         logger.info("Replay complete.")
