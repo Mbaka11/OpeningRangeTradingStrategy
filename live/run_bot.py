@@ -129,6 +129,7 @@ def main_loop():
     summary_flushed_for = None
     session_announced_for = None
     start_account_snapshot = None
+    or_expected_rows = len(pd.date_range(pd.Timestamp(OR_START), pd.Timestamp(OR_END), freq="T"))
 
     # Pre-open status
     try:
@@ -139,6 +140,7 @@ def main_loop():
         logger.exception("Notifier error while posting pre-open status")
     while True:
         try:
+            fetch_latency_ms = None
             ny_now = now_ny()
             if ny_now.weekday() >= 5:  # skip weekends
                 time.sleep(60); continue
@@ -148,6 +150,11 @@ def main_loop():
                 logger.info(f"SESSION_START {format_session_overview()}")
                 session_announced_for = ny_now.date()
                 try:
+                    # If the bot restarted mid-session, ensure we are flat
+                    open_trades = broker_oanda.get_open_trades()
+                    if open_trades:
+                        logger.warning(f"Found {len(open_trades)} open trades at session start; closing them.")
+                        broker_oanda.close_all_trades()
                     start_account_snapshot = broker_oanda.get_account_summary()
                     logger.info(
                         "SESSION_ACCOUNT_START "
@@ -157,15 +164,13 @@ def main_loop():
                         f"open_trades={start_account_snapshot['open_trade_count']} "
                         f"ccy={start_account_snapshot['currency']}"
                     )
+                    notifier.notify_trade(f"Session live: {format_session_overview()}")
                 except Exception:
                     logger.exception("Could not fetch account summary at session start")
 
-            # Heartbeat every 10 minutes
-            if (not last_heartbeat_at) or (ny_now - last_heartbeat_at >= timedelta(minutes=10)):
-                logger.info("HEARTBEAT alive")
-                last_heartbeat_at = ny_now
-
+            fetch_started = datetime.utcnow()
             df = data_feed.fetch_m1(count=200)
+            fetch_latency_ms = int((datetime.utcnow() - fetch_started).total_seconds() * 1000)
             slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
             slice_or  = data_feed.latest_slice(df, OR_START, OR_END)
 
@@ -174,12 +179,38 @@ def main_loop():
             slice_win.index = pd.to_datetime(slice_win["time_ny"])
             slice_or.index  = pd.to_datetime(slice_or["time_ny"])
 
+            # Heartbeat every 10 minutes (after we have fresh data)
+            if (not last_heartbeat_at) or (ny_now - last_heartbeat_at >= timedelta(minutes=10)):
+                hb_open_trades = []
+                try:
+                    hb_open_trades = broker_oanda.get_open_trades()
+                except Exception:
+                    logger.exception("Heartbeat: failed to fetch open trades")
+                last_ts = slice_win.index.max() if not slice_win.empty else None
+                last_px = float(slice_win.loc[last_ts, "close"]) if last_ts is not None else None
+                logger.info(
+                    f"HEARTBEAT alive latency_ms={fetch_latency_ms} "
+                    f"last_bar={last_ts} last_px={last_px} open_trades={len(hb_open_trades)}"
+                )
+                last_heartbeat_at = ny_now
+
             has_entry = any(slice_win.index.time == ENTRY_T_T)
             has_exit  = any(slice_win.index.time == EXIT_T_T)
             if not has_entry or not has_exit:
                 if in_session_window:
                     logger.warning("Skipping (missing entry/exit bar)")
                     summary["skipped"] += 1
+                time.sleep(60); continue
+
+            # OR completeness / zero-range guard
+            if len(slice_or) != or_expected_rows:
+                logger.warning(f"Skipping day (OR incomplete rows={len(slice_or)} expected={or_expected_rows})")
+                summary["skipped"] += 1
+                time.sleep(60); continue
+            or_high, or_low = slice_or["high"].max(), slice_or["low"].min()
+            if or_high == or_low:
+                logger.warning("Skipping day (OR range zero)")
+                summary["skipped"] += 1
                 time.sleep(60); continue
 
             trade_date = ny_now.date()
@@ -228,7 +259,7 @@ def main_loop():
                 except Exception:
                     logger.exception("Notifier error while posting exit")
         except Exception as e:
-            logger.exception(f"Error: {e}")
+            logger.exception(f"Error: {e} (last fetch latency_ms={fetch_latency_ms})")
             summary["errors"] += 1
             time.sleep(60)
         finally:
