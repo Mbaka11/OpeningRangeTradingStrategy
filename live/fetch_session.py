@@ -52,8 +52,10 @@ def fetch_range(from_dt, to_dt):
             "close": float(mid.get("c", 0.0)),
             "complete": bool(c.get("complete", False)),
         })
-    df = pd.DataFrame(records).sort_values("time_ny").reset_index(drop=True)
-    return df
+    if not records:
+        # Return empty DF with expected columns so callers don't KeyError on sort
+        return pd.DataFrame(columns=["time_utc", "time_ny", "open", "high", "low", "close", "complete"])
+    return pd.DataFrame(records).sort_values("time_ny").reset_index(drop=True)
 
 
 def main(date_str):
@@ -62,6 +64,9 @@ def main(date_str):
     start = day.replace(hour=9, minute=0, second=0, microsecond=0).astimezone(pytz.UTC)
     end = day.replace(hour=13, minute=0, second=0, microsecond=0).astimezone(pytz.UTC)
     df = fetch_range(start, end)
+    if df.empty:
+        print(f"No data returned for {date_str} between {start} and {end}. Check instrument/token/time window.")
+        return
     out = f"data/raw/replay_{date_str}.csv"
     df.to_csv(out, index=False)
     print(f"Saved {len(df)} rows to {out}")

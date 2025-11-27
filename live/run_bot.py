@@ -24,6 +24,7 @@ PLACE_ORDERS = True  # toggle to True when ready
 POSITION_SIZE = INSTRUMENTS.get("market", {}).get("position_size", 1.0)
 POINT_VAL = INSTRUMENTS.get("market", {}).get("point_value_usd", 80.0)
 REPLAY_FILE = os.getenv("REPLAY_FILE")  # if set, run once on this CSV instead of live polling
+REPLAY_TWEETS = os.getenv("REPLAY_TWEETS", "false").lower() == "true"
 
 OR_START = INSTRUMENTS.get("session", {}).get("or_window", {}).get("start", "09:30")
 OR_END   = INSTRUMENTS.get("session", {}).get("or_window", {}).get("end_inclusive", "10:00")
@@ -35,6 +36,7 @@ SL_PTS   = STRATEGY.get("parameters", {}).get("risk", {}).get("stop_loss_points"
 TP_PTS   = STRATEGY.get("parameters", {}).get("risk", {}).get("take_profit_points", 75)
 
 OR_START_T = pd.Timestamp(OR_START).time()
+OR_END_T = pd.Timestamp(OR_END).time()
 ENTRY_T_T = pd.Timestamp(ENTRY_T).time()
 EXIT_T_T = pd.Timestamp(EXIT_T).time()
 
@@ -45,12 +47,12 @@ def now_ny():
 
 def format_session_overview() -> str:
     """Human-friendly summary of the configured session for logs/alerts."""
+    env_host = broker_oanda.OANDA_API_BASE.replace("https://", "").replace("http://", "").split("/")[0]
     return (
-        f"Session OR {OR_START}-{OR_END} NY, entry {ENTRY_T}, exit {EXIT_T}; "
-        f"instrument={broker_oanda.OANDA_INSTRUMENT} env={broker_oanda.OANDA_API_BASE.split('//')[1].split('/')[0]}; "
-        f"size={POSITION_SIZE} point_val=${POINT_VAL:.2f}; "
-        f"zones top_pct={TOP_PCT} bottom_pct={BOT_PCT} SL={SL_PTS} TP={TP_PTS} "
-        f"orders={'ON' if PLACE_ORDERS else 'OFF'}"
+        f"OR {OR_START}-{OR_END} NY | Entry {ENTRY_T} | Exit {EXIT_T} | "
+        f"{broker_oanda.OANDA_INSTRUMENT} ({env_host}) | Size {POSITION_SIZE} | "
+        f"SL/TP {SL_PTS}/{TP_PTS} | Zones {TOP_PCT:.2f}/{BOT_PCT:.2f} | "
+        f"Point ${POINT_VAL:.2f} | Orders {'ON' if PLACE_ORDERS else 'OFF'}"
     )
 
 
@@ -131,12 +133,13 @@ def main_loop():
     session_announced_for = None
     start_account_snapshot = None
     or_expected_rows = len(pd.date_range(pd.Timestamp(OR_START), pd.Timestamp(OR_END), freq="T"))
+    skipped_days = {}
 
     # Pre-open status
     try:
         overview = format_session_overview()
         logger.info(f"STARTUP {overview}")
-        notifier.notify_trade(f"Bot ready: {overview}")
+        notifier.notify_trade(f"🚀 Bot ready | {overview}")
     except Exception:
         logger.exception("Notifier error while posting pre-open status")
     while True:
@@ -165,12 +168,12 @@ def main_loop():
                         f"open_trades={start_account_snapshot['open_trade_count']} "
                         f"ccy={start_account_snapshot['currency']}"
                     )
-                    notifier.notify_trade(f"Session live: {format_session_overview()}")
+                    notifier.notify_trade(f"🟢 Session live | {format_session_overview()}")
                 except Exception:
                     logger.exception("Could not fetch account summary at session start")
 
             fetch_started = datetime.utcnow()
-            df = data_feed.fetch_m1(count=200)
+            df = data_feed.fetch_m1(count=400)
             fetch_latency_ms = int((datetime.utcnow() - fetch_started).total_seconds() * 1000)
             slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
             slice_or  = data_feed.latest_slice(df, OR_START, OR_END)
@@ -179,6 +182,11 @@ def main_loop():
             slice_win = slice_win.copy(); slice_or = slice_or.copy()
             slice_win.index = pd.to_datetime(slice_win["time_ny"])
             slice_or.index  = pd.to_datetime(slice_or["time_ny"])
+
+            trade_date = ny_now.date()
+            if trade_date in skipped_days:
+                # Already decided to skip this trade day; keep heartbeats only.
+                time.sleep(60); continue
 
             # Heartbeat every 10 minutes (after we have fresh data)
             if (not last_heartbeat_at) or (ny_now - last_heartbeat_at >= timedelta(minutes=10)):
@@ -197,24 +205,35 @@ def main_loop():
 
             has_entry = any(slice_win.index.time == ENTRY_T_T)
             has_exit  = any(slice_win.index.time == EXIT_T_T)
-            if not has_entry or not has_exit:
-                if in_session_window:
-                    logger.warning("Skipping (missing entry/exit bar)")
+            if ny_now.time() >= ENTRY_T_T and not has_entry:
+                if trade_date not in skipped_days:
+                    skipped_days[trade_date] = "missing_entry_bar"
                     summary["skipped"] += 1
+                    logger.warning(f"Skipping day (missing entry bar {ENTRY_T})")
+                time.sleep(60); continue
+            if ny_now.time() >= EXIT_T_T and not has_exit:
+                if trade_date not in skipped_days:
+                    skipped_days[trade_date] = "missing_exit_bar"
+                    summary["skipped"] += 1
+                    logger.warning(f"Skipping day (missing exit bar {EXIT_T})")
                 time.sleep(60); continue
 
             # OR completeness / zero-range guard
-            if len(slice_or) != or_expected_rows:
-                logger.warning(f"Skipping day (OR incomplete rows={len(slice_or)} expected={or_expected_rows})")
-                summary["skipped"] += 1
-                time.sleep(60); continue
-            or_high, or_low = slice_or["high"].max(), slice_or["low"].min()
-            if or_high == or_low:
-                logger.warning("Skipping day (OR range zero)")
-                summary["skipped"] += 1
-                time.sleep(60); continue
+            if ny_now.time() >= OR_END_T:
+                if len(slice_or) != or_expected_rows:
+                    if trade_date not in skipped_days:
+                        skipped_days[trade_date] = "or_incomplete"
+                        summary["skipped"] += 1
+                        logger.warning(f"Skipping day (OR incomplete rows={len(slice_or)} expected={or_expected_rows})")
+                    time.sleep(60); continue
+                or_high, or_low = slice_or["high"].max(), slice_or["low"].min()
+                if or_high == or_low:
+                    if trade_date not in skipped_days:
+                        skipped_days[trade_date] = "or_zero_range"
+                        summary["skipped"] += 1
+                        logger.warning("Skipping day (OR range zero)")
+                    time.sleep(60); continue
 
-            trade_date = ny_now.date()
             if last_trade_date == trade_date:
                 time.sleep(30); continue
 
@@ -333,8 +352,9 @@ def main_loop():
                 logger.info(f"Wrote daily summary: {msg}")
                 try:
                     notifier.notify_trade(
-                        f"Daily recap {last_trade_date}: signals={summary['signals']} orders={summary['orders']} "
-                        f"skipped={summary['skipped']} errors={summary['errors']}{pnl_nav_str}"
+                        f"📊 Recap {last_trade_date}: "
+                        f"signals {summary['signals']}, orders {summary['orders']}, skipped {summary['skipped']}, errors {summary['errors']} |"
+                        f"{pnl_nav_str}"
                     )
                 except Exception:
                     logger.exception("Notifier error while posting recap")
@@ -360,31 +380,35 @@ if __name__ == "__main__":
         has_exit  = any(slice_win.index.time == EXIT_T_T)
         if not has_entry or not has_exit:
             logger.warning("Replay: missing entry/exit bar; skipping")
-            try:
-                notifier.notify_trade(f"[REPLAY] Skipped {REPLAY_FILE}: missing entry/exit bar")
-            except Exception:
-                logger.exception("Notifier error while posting replay skip")
+            if REPLAY_TWEETS:
+                try:
+                    notifier.notify_trade(f"[REPLAY] Skipped {REPLAY_FILE}: missing entry/exit bar")
+                except Exception:
+                    logger.exception("Notifier error while posting replay skip")
         else:
             sig, reason = compute_signal(slice_win, slice_or)
             if sig is None:
                 logger.info(f"Replay: no trade ({reason})")
-                try:
-                    notifier.notify_trade(f"[REPLAY] No trade ({reason}) from {REPLAY_FILE}")
-                except Exception:
-                    logger.exception("Notifier error while posting replay no-trade")
+                if REPLAY_TWEETS:
+                    try:
+                        notifier.notify_trade(f"[REPLAY] No trade ({reason}) from {REPLAY_FILE}")
+                    except Exception:
+                        logger.exception("Notifier error while posting replay no-trade")
             else:
                 side, entry, sl, tp = sig
                 logger.info(f"Replay: Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
                 # Simulate exit/PnL on the replay window
                 res = simulate_exit(slice_win, side, entry, sl, tp)
                 logger.info(f"Replay: Exit {res['exit_reason']} @ {res['exit_px']} | pnl_pts={res['pnl_pts']} pnl_usd={res['pnl_usd']}")
-                try:
-                    msg = (f"[REPLAY] {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} "
-                           f"-> exit {res['exit_reason']} @ {res['exit_px']} "
-                           f"pnl {res['pnl_pts']} pts / ${res['pnl_usd']}")
-                    notifier.notify_trade(msg)
-                except Exception:
-                    logger.exception("Notifier error while posting replay signal")
+                if REPLAY_TWEETS:
+                    try:
+                        replay_date = pd.to_datetime(REPLAY_FILE).date() if REPLAY_FILE else None
+                        msg = (f"[REPLAY {replay_date}] {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} "
+                               f"-> exit {res['exit_reason']} @ {res['exit_px']} "
+                               f"pnl {res['pnl_pts']} pts / ${res['pnl_usd']}")
+                        notifier.notify_trade(msg)
+                    except Exception:
+                        logger.exception("Notifier error while posting replay signal")
         logger.info("Replay complete.")
     else:
         main_loop()

@@ -97,6 +97,7 @@ We will create a small **data contract** validator in the data-audit notebook (c
 All plots will include intuitive titles, units, and short captions.
 
 **Reports folder structure (auto-created by notebooks):**
+
 - `reports/tables/audit/` — data checks (`valid_days.csv`, `exclusion_log.csv`, schema/tz reports).
 - `reports/tables/backtest/` — baseline backtest outputs (`backtest_daily*.csv`, summaries).
 - `reports/tables/robustness/` — parameter sweeps (entry time, zones, SL/TP).
@@ -114,6 +115,7 @@ cp .env.example .env
 ```
 
 Variables:
+
 - `OANDA_ACCOUNT_ID` — your OANDA account ID (use practice for paper).
 - `OANDA_API_TOKEN` — API token for the account.
 - `OANDA_ENV` — `practice` or `live` (start with `practice`).
@@ -124,6 +126,7 @@ Variables:
 Keep the `.env` file out of version control; `.gitignore` already excludes it.
 
 ### Suggested repo layout for live/paper bot
+
 - `notebooks/` — research (keep as-is).
 - `src/` — core strategy logic (reused by live runner).
 - `config/` — YAML configs + `.env` for secrets (not committed).
@@ -134,7 +137,19 @@ Keep the `.env` file out of version control; `.gitignore` already excludes it.
   - `live/logs/` — runtime logs; `live/state/` — checkpoints (e.g., last trade date).
 - `scripts/` — helper scripts (deploy, restart service, download data).
 
+### Quick replay workflow (fetch a day and simulate)
+
+1. Fetch a session day (NY 09:00–13:00) to CSV (example for 2025-11-27):
+   - Linux/macOS/WSL: `python live/fetch_session.py 2025-11-27`
+   - PowerShell (Windows): `python live/fetch_session.py 2025-11-27`
+     Output: `data/raw/replay_2025-11-27.csv`
+2. Run the bot in replay mode against that file (no live calls):
+   - PowerShell example: `$env:REPLAY_FILE="data/raw/replay_2025-11-24.csv"; python live/run_bot.py`
+   - Linux/macOS/WSL: `REPLAY_FILE=data/raw/replay_2025-11-24.csv python live/run_bot.py`
+     It will compute the signal and simulated exit for that day and log the result.
+
 ### Deployment checklist (paper → live)
+
 - Clock/timezone: sync NTP; convert OANDA UTC to NY; handle DST.
 - Symbol mapping: `NAS100_USD` (or broker equivalent), tick size, min stop distance.
 - Risk rails: one trade/day; skip if 10:22/12:00 missing or OR range ≤0; fail-safe flatten at 12:00; cap position size/daily loss.
