@@ -47,12 +47,12 @@ def now_ny():
 
 def format_session_overview() -> str:
     """Human-friendly summary of the configured session for logs/alerts."""
-    env_host = broker_oanda.OANDA_API_BASE.replace("https://", "").replace("http://", "").split("/")[0]
     return (
-        f"OR {OR_START}-{OR_END} NY | Entry {ENTRY_T} | Exit {EXIT_T} | "
-        f"{broker_oanda.OANDA_INSTRUMENT} ({env_host}) | Size {POSITION_SIZE} | "
-        f"SL/TP {SL_PTS}/{TP_PTS} | Zones {TOP_PCT:.2f}/{BOT_PCT:.2f} | "
-        f"Point ${POINT_VAL:.2f} | Orders {'ON' if PLACE_ORDERS else 'OFF'}"
+        f"Session OR {OR_START}-{OR_END} NY, entry {ENTRY_T}, exit {EXIT_T}; "
+        f"instrument={broker_oanda.OANDA_INSTRUMENT} env={broker_oanda.OANDA_API_BASE}; "
+        f"size={POSITION_SIZE} point_val=${POINT_VAL:.2f}; "
+        f"zones top_pct={TOP_PCT:.2f} bottom_pct={BOT_PCT:.2f} SL={SL_PTS} TP={TP_PTS}; "
+        f"orders={'ON' if PLACE_ORDERS else 'OFF'}"
     )
 
 
@@ -134,12 +134,14 @@ def main_loop():
     start_account_snapshot = None
     or_expected_rows = len(pd.date_range(pd.Timestamp(OR_START), pd.Timestamp(OR_END), freq="T"))
     skipped_days = {}
+    session_started_for = None
+    handled_days = set()
 
     # Pre-open status
     try:
         overview = format_session_overview()
         logger.info(f"STARTUP {overview}")
-        notifier.notify_trade(f"🚀 Bot ready | {overview}")
+        notifier.notify_trade(f"Bot ready: {overview}")
     except Exception:
         logger.exception("Notifier error while posting pre-open status")
     while True:
@@ -160,6 +162,7 @@ def main_loop():
                         logger.warning(f"Found {len(open_trades)} open trades at session start; closing them.")
                         broker_oanda.close_all_trades()
                     start_account_snapshot = broker_oanda.get_account_summary()
+                    session_started_for = ny_now.date()
                     logger.info(
                         "SESSION_ACCOUNT_START "
                         f"balance={start_account_snapshot['balance']:.2f} "
@@ -168,7 +171,7 @@ def main_loop():
                         f"open_trades={start_account_snapshot['open_trade_count']} "
                         f"ccy={start_account_snapshot['currency']}"
                     )
-                    notifier.notify_trade(f"🟢 Session live | {format_session_overview()}")
+                    notifier.notify_trade(f"Session live: {format_session_overview()}")
                 except Exception:
                     logger.exception("Could not fetch account summary at session start")
 
@@ -184,12 +187,13 @@ def main_loop():
             slice_or.index  = pd.to_datetime(slice_or["time_ny"])
 
             trade_date = ny_now.date()
-            if trade_date in skipped_days:
-                # Already decided to skip this trade day; keep heartbeats only.
+            if trade_date in skipped_days or trade_date in handled_days:
+                # Already decided to skip/handle this trade day; keep heartbeats only.
                 time.sleep(60); continue
 
-            # Heartbeat every 10 minutes (after we have fresh data)
-            if (not last_heartbeat_at) or (ny_now - last_heartbeat_at >= timedelta(minutes=10)):
+            # Heartbeat cadence: 10m during session window, hourly otherwise
+            hb_interval = timedelta(minutes=10) if in_session_window else timedelta(hours=1)
+            if (not last_heartbeat_at) or (ny_now - last_heartbeat_at >= hb_interval):
                 hb_open_trades = []
                 try:
                     hb_open_trades = broker_oanda.get_open_trades()
@@ -210,12 +214,16 @@ def main_loop():
                     skipped_days[trade_date] = "missing_entry_bar"
                     summary["skipped"] += 1
                     logger.warning(f"Skipping day (missing entry bar {ENTRY_T})")
+                    handled_days.add(trade_date)
+                    last_trade_date = trade_date
                 time.sleep(60); continue
             if ny_now.time() >= EXIT_T_T and not has_exit:
                 if trade_date not in skipped_days:
                     skipped_days[trade_date] = "missing_exit_bar"
                     summary["skipped"] += 1
                     logger.warning(f"Skipping day (missing exit bar {EXIT_T})")
+                    handled_days.add(trade_date)
+                    last_trade_date = trade_date
                 time.sleep(60); continue
 
             # OR completeness / zero-range guard
@@ -225,6 +233,8 @@ def main_loop():
                         skipped_days[trade_date] = "or_incomplete"
                         summary["skipped"] += 1
                         logger.warning(f"Skipping day (OR incomplete rows={len(slice_or)} expected={or_expected_rows})")
+                        handled_days.add(trade_date)
+                        last_trade_date = trade_date
                     time.sleep(60); continue
                 or_high, or_low = slice_or["high"].max(), slice_or["low"].min()
                 if or_high == or_low:
@@ -232,6 +242,8 @@ def main_loop():
                         skipped_days[trade_date] = "or_zero_range"
                         summary["skipped"] += 1
                         logger.warning("Skipping day (OR range zero)")
+                        handled_days.add(trade_date)
+                        last_trade_date = trade_date
                     time.sleep(60); continue
 
             if last_trade_date == trade_date:
@@ -246,6 +258,7 @@ def main_loop():
                 logger.info(f"No trade ({reason})")
                 last_trade_date = trade_date
                 summary["skipped"] += 1
+                handled_days.add(trade_date)
                 time.sleep(60)
                 continue
 
@@ -286,7 +299,7 @@ def main_loop():
             # Flush summary after exit window (post 12:05 NY) once per trade_date
             ny_now = now_ny()
             after_exit = ny_now.time() >= EXIT_T_T
-            if after_exit and last_trade_date and summary_flushed_for != last_trade_date:
+            if after_exit and last_trade_date and summary_flushed_for != last_trade_date and session_started_for == last_trade_date:
                 fname = summary_path / f"{last_trade_date}_summary.log"
                 end_snapshot = None
                 try:
@@ -352,7 +365,7 @@ def main_loop():
                 logger.info(f"Wrote daily summary: {msg}")
                 try:
                     notifier.notify_trade(
-                        f"📊 Recap {last_trade_date}: "
+                        f"Recap {last_trade_date}: "
                         f"signals {summary['signals']}, orders {summary['orders']}, skipped {summary['skipped']}, errors {summary['errors']} |"
                         f"{pnl_nav_str}"
                     )
@@ -361,6 +374,7 @@ def main_loop():
                 summary = {"signals": 0, "orders": 0, "skipped": 0, "errors": 0, "last_signal": None}
                 summary_flushed_for = last_trade_date
                 start_account_snapshot = None
+                session_started_for = None
 
 
 if __name__ == "__main__":
