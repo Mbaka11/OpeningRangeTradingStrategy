@@ -281,16 +281,33 @@ def main_loop():
 
             last_trade_date = trade_date
 
-            # monitor until 12:00 for flat (simplified: if PLACE_ORDERS False, just sleep)
-            while now_ny().time() < EXIT_T_T:
-                time.sleep(30)
+            # Monitor the trade until it's closed by SL/TP or until the hard exit time.
             if PLACE_ORDERS:
-                closed = broker_oanda.close_all_trades()
-                logger.info(f"Hard exit close_all: {closed}")
-                try:
-                    notifier.notify_trade(f"Paper trade exit @ {EXIT_T} NY; forced flat. Details: {closed}")
-                except Exception:
-                    logger.exception("Notifier error while posting exit")
+                logger.info("Monitoring open trade for SL/TP or 12:00 hard exit.")
+                trade_closed_by_broker = False
+                while now_ny().time() < EXIT_T_T:
+                    time.sleep(30)  # Check every 30 seconds
+                    try:
+                        open_trades = broker_oanda.get_open_trades()
+                        if not open_trades:
+                            logger.info("Trade closed by broker (SL/TP hit).")
+                            trade_closed_by_broker = True
+                            break
+                    except Exception:
+                        logger.exception("Failed to check open trades during monitoring. Assuming trade is still open.")
+                
+                if not trade_closed_by_broker:
+                    logger.info(f"Hard exit time {EXIT_T} reached. Closing any open trades.")
+                    closed = broker_oanda.close_all_trades()
+                    logger.info(f"Hard exit close_all: {closed}")
+                    try:
+                        notifier.notify_trade(f"Paper trade exit @ {EXIT_T} NY; forced flat. Details: {closed}")
+                    except Exception:
+                        logger.exception("Notifier error while posting exit")
+            else: # If not placing orders, just wait until exit time as before
+                while now_ny().time() < EXIT_T_T:
+                    time.sleep(30)
+
         except Exception as e:
             logger.exception(f"Error: {e} (last fetch latency_ms={fetch_latency_ms})")
             summary["errors"] += 1
