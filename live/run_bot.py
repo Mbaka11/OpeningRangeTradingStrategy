@@ -132,7 +132,7 @@ def main_loop():
     summary_flushed_for = None
     session_announced_for = None
     start_account_snapshot = None
-    or_expected_rows = len(pd.date_range(pd.Timestamp(OR_START), pd.Timestamp(OR_END), freq="T"))
+    or_expected_rows = len(pd.date_range(pd.Timestamp(OR_START), pd.Timestamp(OR_END), freq="min"))
     skipped_days = {}
     session_started_for = None
     handled_days = set()
@@ -268,7 +268,9 @@ def main_loop():
             summary["last_signal"] = f"{trade_date} {side} {entry:.2f}"
 
             if PLACE_ORDERS:
-                units = int(POSITION_SIZE) if side == "long" else -int(POSITION_SIZE)
+                # Scale units by POINT_VAL so OANDA PnL matches the $80/pt risk model
+                qty = int(POSITION_SIZE * POINT_VAL)
+                units = qty if side == "long" else -qty
                 resp = broker_oanda.submit_market_with_sl_tp(units=units, sl_price=sl, tp_price=tp)
                 logger.info(f"Order placed: {resp}")
                 summary["orders"] += 1
