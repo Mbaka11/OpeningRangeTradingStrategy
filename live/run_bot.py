@@ -108,6 +108,22 @@ def simulate_exit(win_df: pd.DataFrame, side: str, entry: float, sl: float, tp: 
             exit_ts = path.index.max()
             exit_px = float(path.loc[exit_ts, "close"])
             exit_reason = "time"
+    
+    # Calculate MFE/MAE
+    if exit_ts:
+        trade_path = path.loc[:exit_ts]
+    else:
+        trade_path = path
+    
+    mfe, mae = 0.0, 0.0
+    if not trade_path.empty:
+        if side == "long":
+            mfe = trade_path["high"].max() - entry
+            mae = entry - trade_path["low"].min()
+        else:
+            mfe = entry - trade_path["low"].min()
+            mae = trade_path["high"].max() - entry
+
     pnl_pts = None
     pnl_usd = None
     if exit_px is not None:
@@ -119,6 +135,8 @@ def simulate_exit(win_df: pd.DataFrame, side: str, entry: float, sl: float, tp: 
         "exit_reason": exit_reason,
         "pnl_pts": pnl_pts,
         "pnl_usd": pnl_usd,
+        "mfe": mfe,
+        "mae": mae,
     }
 
 
@@ -130,6 +148,7 @@ def main_loop():
     summary_path.mkdir(parents=True, exist_ok=True)
     trade_log_path = summary_path / "trade_days.csv"
     summary_flushed_for = None
+    or_announced_for = None
     session_announced_for = None
     start_account_snapshot = None
     or_expected_rows = len(pd.date_range(pd.Timestamp(OR_START), pd.Timestamp(OR_END), freq="min"))
@@ -245,6 +264,20 @@ def main_loop():
                         handled_days.add(trade_date)
                         last_trade_date = trade_date
                     time.sleep(60); continue
+                
+                # OR is valid; announce levels if not yet done
+                if trade_date not in skipped_days and or_announced_for != trade_date:
+                    or_rng = or_high - or_low
+                    t_cut = or_high - TOP_PCT * or_rng
+                    b_cut = or_low + BOT_PCT * or_rng
+                    msg = (f"OR Levels {OR_START}-{OR_END}: {or_low:.2f}-{or_high:.2f} | "
+                           f"Long > {t_cut:.2f} | Short < {b_cut:.2f}")
+                    logger.info(msg)
+                    try:
+                        notifier.notify_trade(msg)
+                    except Exception:
+                        logger.exception("Notifier error OR levels")
+                    or_announced_for = trade_date
 
             if last_trade_date == trade_date:
                 time.sleep(30); continue
@@ -306,6 +339,32 @@ def main_loop():
                         notifier.notify_trade(f"Paper trade exit @ {EXIT_T} NY; forced flat. Details: {closed}")
                     except Exception:
                         logger.exception("Notifier error while posting exit")
+                
+                # Post-trade MFE/MAE analysis
+                try:
+                    # Fetch data covering the trade duration (Entry -> Now)
+                    # Use a buffer (400 candles) to ensure we cover the start
+                    df_post = data_feed.fetch_m1(count=400)
+                    dt_entry = pd.Timestamp.combine(trade_date, ENTRY_T_T).tz_localize(NY)
+                    dt_exit_actual = now_ny()
+                    
+                    # Filter for trade window (excluding entry bar itself to see subsequent price action)
+                    mask = (df_post["time_ny"] > dt_entry) & (df_post["time_ny"] <= dt_exit_actual)
+                    df_trade = df_post.loc[mask]
+                    
+                    if not df_trade.empty:
+                        if side == "long":
+                            mfe = df_trade["high"].max() - entry
+                            mae = entry - df_trade["low"].min()
+                        else:
+                            mfe = entry - df_trade["low"].min()
+                            mae = df_trade["high"].max() - entry
+                        
+                        stats_msg = f"Trade Stats: MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts"
+                        logger.info(stats_msg)
+                        notifier.notify_trade(stats_msg)
+                except Exception:
+                    logger.exception("Failed to calculate MFE/MAE")
             else: # If not placing orders, just wait until exit time as before
                 while now_ny().time() < EXIT_T_T:
                     time.sleep(30)
@@ -438,17 +497,18 @@ if __name__ == "__main__":
                 logger.info(f"Replay: Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
                 # Simulate exit/PnL on the replay window
                 res = simulate_exit(slice_win, side, entry, sl, tp)
-                logger.info(f"Replay: Exit {res['exit_reason']} @ {res['exit_px']} | pnl_pts={res['pnl_pts']} pnl_usd={res['pnl_usd']}")
+                logger.info(f"Replay: Exit {res['exit_reason']} @ {res['exit_px']} | pnl_pts={res['pnl_pts']} pnl_usd={res['pnl_usd']} MFE={res['mfe']:.2f} MAE={res['mae']:.2f}")
                 if REPLAY_TWEETS:
                     try:
                         replay_date = pd.to_datetime(REPLAY_FILE).date() if REPLAY_FILE else None
                         msg = (f"[REPLAY {replay_date}] {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} "
                                f"-> exit {res['exit_reason']} @ {res['exit_px']} "
-                               f"pnl {res['pnl_pts']} pts / ${res['pnl_usd']}")
+                               f"pnl {res['pnl_pts']} pts / ${res['pnl_usd']} "
+                               f"(MFE +{res['mfe']:.2f} / MAE -{res['mae']:.2f})")
                         notifier.notify_trade(msg)
                     except Exception:
                         logger.exception("Notifier error while posting replay signal")
-                print(f"REPLAY {Path(REPLAY_FILE).name}: {side.upper()} @ {entry:.2f} -> {res['exit_reason']} @ {res['exit_px']:.2f} | PnL ${res['pnl_usd']:.2f}")
+                print(f"REPLAY {Path(REPLAY_FILE).name}: {side.upper()} @ {entry:.2f} -> {res['exit_reason']} @ {res['exit_px']:.2f} | PnL ${res['pnl_usd']:.2f} | MFE +{res['mfe']:.2f} MAE -{res['mae']:.2f}")
         logger.info("Replay complete.")
     else:
         main_loop()
