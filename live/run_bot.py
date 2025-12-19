@@ -407,13 +407,19 @@ if __name__ == "__main__":
         df.index = pd.to_datetime(df["time_ny"])
         slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
         slice_or  = data_feed.latest_slice(df, OR_START, OR_END)
+
+        # Parity check: Ensure OR has full data, just like main_loop
+        or_expected_rows = len(pd.date_range(pd.Timestamp(OR_START), pd.Timestamp(OR_END), freq="min"))
+        if len(slice_or) != or_expected_rows:
+            logger.warning(f"Replay: OR incomplete (rows={len(slice_or)} expected={or_expected_rows}); skipping to match live logic")
+            sys.exit(0)
+
         has_entry = any(slice_win.index.time == ENTRY_T_T)
-        has_exit  = any(slice_win.index.time == EXIT_T_T)
-        if not has_entry or not has_exit:
-            logger.warning("Replay: missing entry/exit bar; skipping")
+        if not has_entry:
+            logger.warning("Replay: missing entry bar; skipping")
             if REPLAY_TWEETS:
                 try:
-                    notifier.notify_trade(f"[REPLAY] Skipped {REPLAY_FILE}: missing entry/exit bar")
+                    notifier.notify_trade(f"[REPLAY] Skipped {REPLAY_FILE}: missing entry bar")
                 except Exception:
                     logger.exception("Notifier error while posting replay skip")
         else:
@@ -440,6 +446,7 @@ if __name__ == "__main__":
                         notifier.notify_trade(msg)
                     except Exception:
                         logger.exception("Notifier error while posting replay signal")
+                print(f"REPLAY {Path(REPLAY_FILE).name}: {side.upper()} @ {entry:.2f} -> {res['exit_reason']} @ {res['exit_px']:.2f} | PnL ${res['pnl_usd']:.2f}")
         logger.info("Replay complete.")
     else:
         main_loop()

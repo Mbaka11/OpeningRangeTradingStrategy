@@ -63,11 +63,24 @@ def main(date_str):
     day = NY.localize(datetime.strptime(date_str, "%Y-%m-%d"))
     start = day.replace(hour=9, minute=0, second=0, microsecond=0).astimezone(pytz.UTC)
     end = day.replace(hour=13, minute=0, second=0, microsecond=0).astimezone(pytz.UTC)
+
+    # OANDA returns 400 if 'to' is in the future. Clamp to now.
+    now_utc = datetime.now(pytz.UTC)
+    if start > now_utc:
+        print(f"Session start {start} is in the future. Cannot fetch.")
+        return
+    if end > now_utc:
+        # Buffer by 30s to avoid 'future' error due to clock skew, and strip micros
+        safe_end = (now_utc - timedelta(seconds=30)).replace(microsecond=0)
+        print(f"Session in progress. Clamping end time to {safe_end}.")
+        end = safe_end
+
     df = fetch_range(start, end)
     if df.empty:
         print(f"No data returned for {date_str} between {start} and {end}. Check instrument/token/time window.")
         return
     out = f"data/raw/replay_{date_str}.csv"
+    Path(out).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out, index=False)
     print(f"Saved {len(df)} rows to {out}")
     print(df.head())
