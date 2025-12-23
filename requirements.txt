@@ -13,3 +13,7 @@ apscheduler>=3.10,<4
 python-dotenv>=1.0,<2
 tqdm>=4.66,<5
 tweepy>=4.14,<5
+
+#test
+pytest>=7.4,<8
+pytest-mock>=3.11,<4
