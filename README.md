@@ -121,7 +121,7 @@ Variables:
 - `OANDA_ENV` — `practice` or `live` (start with `practice`).
 - `OANDA_INSTRUMENT` — instrument symbol (e.g., `NAS100_USD`).
 - `OANDA_TIMEZONE` — assumed local session timezone (default `America/New_York`).
-- Twitter posting (optional, via API v2): `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_SECRET`.
+- Twitter posting (optional, via API v2): `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_SECRET`. **(Note: Free Tier is text-only. Ensure 'Read and Write' permissions are enabled in Developer Portal).**
 
 Keep the `.env` file out of version control; `.gitignore` already excludes it.
 
@@ -146,9 +146,38 @@ Keep the `.env` file out of version control; `.gitignore` already excludes it.
    - PowerShell (Windows): `python live/fetch_session.py 2025-11-27`
      Output: `data/raw/replay_2025-11-27.csv`
 2. Run the bot in replay mode against that file (no live calls):
-   - PowerShell example: `$env:REPLAY_FILE="data/raw/replay_2025-11-24.csv"; python live/run_bot.py`
-   - Linux/macOS/WSL: `REPLAY_FILE=data/raw/replay_2025-11-24.csv python live/run_bot.py`
-     It will compute the signal and simulated exit for that day and log the result.
+   - **Basic Replay (Logs only):**
+     - PowerShell: `$env:REPLAY_FILE="data/raw/replay_2025-11-24.csv"; python live/run_bot.py`
+     - Linux/macOS: `REPLAY_FILE=data/raw/replay_2025-11-24.csv python live/run_bot.py`
+   - **Full Replay (Logs + Tweet + Chart):**
+     - PowerShell: `$env:REPLAY_TWEETS="true"; $env:REPLAY_FILE="data/raw/replay_2025-11-24.csv"; python live/run_bot.py`
+     - Linux/macOS: `REPLAY_TWEETS=true REPLAY_FILE=data/raw/replay_2025-11-24.csv python live/run_bot.py`
+       _Generates a consolidated report with OR levels, trade signal, PnL, MFE/MAE stats, and attaches a chart image._
+
+### Docker & Verification Commands
+
+Once the bot is running in Docker (see `DEPLOYMENT.md`), use these commands to verify health and connectivity:
+
+- **Verify Account & Margin:**
+
+  ```bash
+  sudo docker exec trading-bot python scripts/verify_account.py
+  ```
+
+  _Checks connection to OANDA, confirms USD currency, and verifies sufficient margin (~$105k) for the strategy._
+
+- **List Available Accounts:**
+
+  ```bash
+  sudo docker exec trading-bot python scripts/list_accounts.py
+  ```
+
+  _Lists all sub-accounts your API token can access. Useful if you get 403 Forbidden errors._
+
+- **Check Live Logs:**
+  ```bash
+  sudo docker logs -f trading-bot
+  ```
 
 ### Deployment checklist (paper → live)
 
