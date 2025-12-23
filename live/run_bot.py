@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from live import data_feed, broker_oanda
-from live import notifier
+from live import notifier, plotting
 from live.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
 from live.logging_utils import setup_logger
 from src import or_core
@@ -397,7 +397,17 @@ def main_loop():
                         
                         stats_msg = f"Trade Stats: MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts"
                         logger.info(stats_msg)
-                        notifier.notify_trade(stats_msg)
+                        
+                        # Generate Chart
+                        try:
+                            img_buf = plotting.create_trade_chart(
+                                df_trade, trade_date, ENTRY_T_T, now_ny(), 
+                                entry, float(df_trade.iloc[-1]["close"]), side, 
+                                or_high, or_low, sl, tp, mfe, mae
+                            )
+                            notifier.notify_trade(stats_msg, image_buffer=img_buf)
+                        except Exception:
+                            logger.exception("Failed to generate/post chart")
                     else:
                         logger.warning("Trade duration too short or candle data delayed; skipping MFE/MAE stats.")
                 except Exception:
@@ -505,47 +515,102 @@ if __name__ == "__main__":
         df.index = pd.to_datetime(df["time_ny"])
         slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
         slice_or  = data_feed.latest_slice(df, OR_START, OR_END)
+        
+        # Consolidated Report Builder
+        report_lines = []
+        img_buf = None
+        
+        # 1. Session Info
+        overview = format_session_overview()
+        report_lines.append("--- SESSION LIVE ---")
+        report_lines.append(f"{overview}")
+        report_lines.append("Account: [BALANCE_START] [NAV_START] (Simulated)")
 
         # Parity check: Ensure OR has full data, just like main_loop
         or_expected_rows = len(pd.date_range(pd.Timestamp(OR_START), pd.Timestamp(OR_END), freq="min"))
         if len(slice_or) != or_expected_rows:
             logger.warning(f"Replay: OR incomplete (rows={len(slice_or)} expected={or_expected_rows}); skipping to match live logic")
-            sys.exit(0)
-
-        has_entry = any(slice_win.index.time == ENTRY_T_T)
-        if not has_entry:
-            logger.warning("Replay: missing entry bar; skipping")
-            if REPLAY_TWEETS:
-                try:
-                    notifier.notify_trade(f"[REPLAY] Skipped {REPLAY_FILE}: missing entry bar")
-                except Exception:
-                    logger.exception("Notifier error while posting replay skip")
+            report_lines.append(f"\n[SKIPPED] OR incomplete ({len(slice_or)}/{or_expected_rows} rows)")
         else:
-            sig, reason = compute_signal(slice_win, slice_or)
-            if sig is None:
-                logger.info(f"Replay: no trade ({reason})")
-                if REPLAY_TWEETS:
-                    try:
-                        notifier.notify_trade(f"[REPLAY] No trade ({reason}) from {REPLAY_FILE}")
-                    except Exception:
-                        logger.exception("Notifier error while posting replay no-trade")
+            # 2. OR Levels
+            or_high, or_low = slice_or["high"].max(), slice_or["low"].min()
+            or_rng = or_high - or_low
+            t_cut = or_high - TOP_PCT * or_rng
+            b_cut = or_low + BOT_PCT * or_rng
+            
+            report_lines.append("\n--- OR LEVELS ---")
+            report_lines.append(f"Range: {or_low:.2f}-{or_high:.2f}")
+            report_lines.append(f"Long > {t_cut:.2f} | Short < {b_cut:.2f}")
+
+            has_entry = any(slice_win.index.time == ENTRY_T_T)
+            if not has_entry:
+                logger.warning("Replay: missing entry bar; skipping")
+                report_lines.append("\n[SKIPPED] Missing entry bar")
             else:
-                side, entry, sl, tp = sig
-                logger.info(f"Replay: Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
-                # Simulate exit/PnL on the replay window
-                res = simulate_exit(slice_win, side, entry, sl, tp)
-                logger.info(f"Replay: Exit {res['exit_reason']} @ {res['exit_px']} | pnl_pts={res['pnl_pts']} pnl_usd={res['pnl_usd']} MFE={res['mfe']:.2f} MAE={res['mae']:.2f}")
-                if REPLAY_TWEETS:
+                sig, reason = compute_signal(slice_win, slice_or)
+                if sig is None:
+                    logger.info(f"Replay: no trade ({reason})")
+                    report_lines.append(f"\n[NO TRADE] {reason}")
+                else:
+                    side, entry, sl, tp = sig
+                    logger.info(f"Replay: Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
+                    report_lines.append(f"\n[SIGNAL] {side.upper()} @ {entry:.2f}")
+                    report_lines.append(f"SL {sl:.2f} | TP {tp:.2f}")
+
+                    # Simulate exit/PnL on the replay window
+                    res = simulate_exit(slice_win, side, entry, sl, tp)
+                    logger.info(f"Replay: Exit {res['exit_reason']} @ {res['exit_px']} | pnl_pts={res['pnl_pts']} pnl_usd={res['pnl_usd']} MFE={res['mfe']:.2f} MAE={res['mae']:.2f}")
+                    
+                    report_lines.append(f"\n[EXIT] {res['exit_reason']} @ {res['exit_px']:.2f}")
+                    report_lines.append(f"PnL: ${res['pnl_usd']:.2f} ({res['pnl_pts']:.2f} pts)")
+                    report_lines.append(f"Stats: MFE +{res['mfe']:.2f} | MAE -{res['mae']:.2f}")
+
+                    # Generate Replay Chart
                     try:
-                        replay_date = pd.to_datetime(REPLAY_FILE).date() if REPLAY_FILE else None
-                        msg = (f"[REPLAY {replay_date}] {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} "
-                               f"-> exit {res['exit_reason']} @ {res['exit_px']} "
-                               f"pnl {res['pnl_pts']} pts / ${res['pnl_usd']} "
-                               f"(MFE +{res['mfe']:.2f} / MAE -{res['mae']:.2f})")
-                        notifier.notify_trade(msg)
+                        # Extract date from filename if possible (e.g. replay_2025-12-23.csv)
+                        r_date = None
+                        if REPLAY_FILE:
+                            try:
+                                r_date = pd.to_datetime(Path(REPLAY_FILE).stem.replace("replay_", "")).date()
+                            except Exception:
+                                r_date = datetime.now().date()
+
+                        img_buf = plotting.create_trade_chart(
+                            slice_win, r_date, 
+                            ENTRY_T_T, res['exit_ts'], 
+                            entry, res['exit_px'], side, 
+                            slice_or["high"].max(), slice_or["low"].min(), sl, tp, res['mfe'], res['mae']
+                        )
                     except Exception:
-                        logger.exception("Notifier error while posting replay signal")
-                print(f"REPLAY {Path(REPLAY_FILE).name}: {side.upper()} @ {entry:.2f} -> {res['exit_reason']} @ {res['exit_px']:.2f} | PnL ${res['pnl_usd']:.2f} | MFE +{res['mfe']:.2f} MAE -{res['mae']:.2f}")
+                        logger.exception("Notifier error while generating replay chart")
+
+        # 4. Recap
+        report_lines.append("\n--- RECAP ---")
+        # Determine if we had a trade for stats
+        had_trade = 'res' in locals() and res is not None
+        pnl_val = res['pnl_usd'] if had_trade else 0.0
+        report_lines.append(f"Signals: {1 if had_trade else 0} | Orders: {1 if had_trade else 0}")
+        report_lines.append(f"PnL: ${pnl_val:.2f} (Simulated)")
+        report_lines.append("Account: [BALANCE_END] [NAV_END] (Simulated)")
+
+        full_report = "\n".join(report_lines)
+        
+        try:
+            logger.info("--- CONSOLIDATED REPLAY REPORT ---\n" + full_report)
+        except UnicodeEncodeError:
+            # Fallback for Windows consoles that cannot print emojis
+            logger.info("--- CONSOLIDATED REPLAY REPORT ---\n" + full_report.encode("ascii", "replace").decode("ascii"))
+
+        if REPLAY_TWEETS:
+            try:
+                res = notifier.notify_trade(full_report, image_buffer=img_buf)
+                if res and res.get("status") == "posted":
+                    logger.info("Replay tweet sent.")
+                else:
+                    logger.warning(f"Replay tweet failed: {res.get('reason') if res else 'unknown'}")
+            except Exception:
+                logger.exception("Notifier error while posting replay report")
+
         logger.info("Replay complete.")
     else:
         main_loop()
