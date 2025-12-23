@@ -117,7 +117,7 @@ cp .env.example .env
 Variables:
 
 - `OANDA_ACCOUNT_ID` — your OANDA account ID (use practice for paper).
-- `OANDA_API_TOKEN` — API token for the account.
+- `OANDA_API_TOKEN` — API token for the account. **(Note: If you create a new sub-account, you must regenerate this token in the OANDA Hub).**
 - `OANDA_ENV` — `practice` or `live` (start with `practice`).
 - `OANDA_INSTRUMENT` — instrument symbol (e.g., `NAS100_USD`).
 - `OANDA_TIMEZONE` — assumed local session timezone (default `America/New_York`).
@@ -135,7 +135,9 @@ Keep the `.env` file out of version control; `.gitignore` already excludes it.
   - `live/broker_oanda.py` — thin OANDA client (paper/live toggle).
   - `live/data_feed.py` — OANDA candle/tick polling, UTC→NY conversion, minute bar assembly.
   - `live/logs/` — runtime logs; `live/state/` — checkpoints (e.g., last trade date).
-- `scripts/` — helper scripts (deploy, restart service, download data).
+- `scripts/` — helper scripts:
+  - `verify_account.py` — check connection, currency, and margin availability.
+  - `list_accounts.py` — list all accounts accessible by the current token.
 
 ### Quick replay workflow (fetch a day and simulate)
 

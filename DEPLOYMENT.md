@@ -25,9 +25,11 @@ nano .env
 3. **Paste your configuration:**
 
 ```env
-API_KEY=your_actual_key
-SECRET_KEY=your_actual_secret
-TRADING_ENV=paper
+OANDA_ACCOUNT_ID=101-001-YOUR-ID
+OANDA_API_TOKEN=your_oanda_token
+OANDA_ENV=practice
+OANDA_INSTRUMENT=NAS100_USD
+OANDA_TIMEZONE=America/New_York
 
 ```
 
