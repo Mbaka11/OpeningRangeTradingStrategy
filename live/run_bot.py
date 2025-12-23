@@ -520,6 +520,13 @@ if __name__ == "__main__":
         report_lines = []
         img_buf = None
         
+        # Extract date for report/chart
+        r_date = datetime.now().date()
+        try:
+             r_date = pd.to_datetime(Path(REPLAY_FILE).stem.replace("replay_", "")).date()
+        except Exception:
+             pass
+
         # 1. Session Info
         overview = format_session_overview()
         report_lines.append("--- SESSION LIVE ---")
@@ -567,14 +574,6 @@ if __name__ == "__main__":
 
                     # Generate Replay Chart
                     try:
-                        # Extract date from filename if possible (e.g. replay_2025-12-23.csv)
-                        r_date = None
-                        if REPLAY_FILE:
-                            try:
-                                r_date = pd.to_datetime(Path(REPLAY_FILE).stem.replace("replay_", "")).date()
-                            except Exception:
-                                r_date = datetime.now().date()
-
                         img_buf = plotting.create_trade_chart(
                             slice_win, r_date, 
                             ENTRY_T_T, res['exit_ts'], 
@@ -602,8 +601,25 @@ if __name__ == "__main__":
             logger.info("--- CONSOLIDATED REPLAY REPORT ---\n" + full_report.encode("ascii", "replace").decode("ascii"))
 
         if REPLAY_TWEETS:
+            # Construct Tweet (Shortened to <280 chars to avoid 403 errors)
+            tweet_lines = []
+            tweet_lines.append(f"REPLAY {r_date}")
+            tweet_lines.append(f"OR: {slice_or['low'].min():.2f}-{slice_or['high'].max():.2f}")
+            
+            if 'sig' in locals() and sig:
+                side, entry, sl, tp = sig
+                tweet_lines.append(f"Sig: {side.upper()} @ {entry:.2f}")
+                if 'res' in locals():
+                    tweet_lines.append(f"Exit: {res['exit_reason']} @ {res['exit_px']:.2f}")
+                    tweet_lines.append(f"PnL: ${res['pnl_usd']:.0f} (MFE {res['mfe']:.1f}/MAE {res['mae']:.1f})")
+            else:
+                tweet_lines.append("No Trade")
+            
+            tweet_lines.append(f"Simulated at {now_ny().strftime('%H:%M:%S')} NY")
+            tweet_msg = "\n".join(tweet_lines)
+
             try:
-                res = notifier.notify_trade(full_report, image_buffer=img_buf)
+                res = notifier.notify_trade(tweet_msg, image_buffer=img_buf)
                 if res and res.get("status") == "posted":
                     logger.info("Replay tweet sent.")
                 else:

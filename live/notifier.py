@@ -47,9 +47,6 @@ def notify_trade(message: str, image_buffer=None):
             except Exception as e:
                 logger.warning(f"Notifier: Image upload failed (likely Free Tier limit): {e}")
 
-        resp = client.create_tweet(text=message, media_ids=media_ids if media_ids else None)
-        logger.info("Notifier: tweet posted via v2 client")
-        return {"status": "posted", "via": "api", "id": getattr(resp, 'data', {})}
         try:
             resp = client.create_tweet(text=message, media_ids=media_ids if media_ids else None)
             logger.info("Notifier: tweet posted via v2 client")
@@ -66,4 +63,6 @@ def notify_trade(message: str, image_buffer=None):
         logger.warning(f"Notifier: tweet failed: {e}")
         if "403" in str(e):
             logger.warning("Hint: 403 Forbidden often means missing Write permissions in Twitter Dev Portal or Free Tier limits.")
+            if len(message) > 280:
+                logger.warning(f"Hint: Message length is {len(message)} chars. Twitter limit is 280.")
         return {"status": "error", "reason": str(e)}
