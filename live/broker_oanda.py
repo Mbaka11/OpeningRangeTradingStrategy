@@ -81,6 +81,8 @@ def get_account_summary():
         "balance": _f("balance"),
         "nav": _f("NAV"),
         "unrealized_pl": _f("unrealizedPL"),
+        "margin_available": _f("marginAvailable"),
+        "margin_used": _f("marginUsed"),
         "currency": acct.get("currency", ""),
         "open_trade_count": _i("openTradeCount"),
         "last_transaction_id": acct.get("lastTransactionID"),

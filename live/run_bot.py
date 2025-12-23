@@ -300,24 +300,44 @@ def main_loop():
             summary["signals"] += 1
             summary["last_signal"] = f"{trade_date} {side} {entry:.2f}"
 
+            order_active = False
             if PLACE_ORDERS:
                 # Scale units by POINT_VAL so OANDA PnL matches the $80/pt risk model
                 qty = int(POSITION_SIZE * POINT_VAL)
                 units = qty if side == "long" else -qty
                 resp = broker_oanda.submit_market_with_sl_tp(units=units, sl_price=sl, tp_price=tp)
-                logger.info(f"Order placed: {resp}")
-                summary["orders"] += 1
-                try:
-                    notifier.notify_trade(f"Paper trade {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} ({trade_date})")
-                except Exception:
-                    logger.exception("Notifier error while posting trade")
+                
+                # Check if order was immediately rejected (e.g. INSUFFICIENT_MARGIN)
+                if "orderCancelTransaction" in resp:
+                    cancel_reason = resp["orderCancelTransaction"].get("reason", "UNKNOWN")
+                    if cancel_reason == "INSUFFICIENT_MARGIN":
+                        acct = broker_oanda.get_account_summary()
+                        margin_avail = acct.get("margin_available", 0)
+                        ccy = acct.get("currency", "")
+                        err_msg = (f"TRADE REJECTED: Insufficient Margin. "
+                                   f"Req Units: {abs(units)} (~${abs(units)*entry:,.0f} value). "
+                                   f"Margin Avail: {margin_avail:,.2f} {ccy}. "
+                                   "Strategy requires more capital for this size.")
+                        logger.error(err_msg)
+                        notifier.notify_trade(f"CRITICAL: {err_msg}")
+                    else:
+                        logger.error(f"Order rejected: {cancel_reason}")
+                else:
+                    # Order accepted
+                    order_active = True
+                    logger.info(f"Order placed: {resp}")
+                    summary["orders"] += 1
+                    try:
+                        notifier.notify_trade(f"Paper trade {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} ({trade_date})")
+                    except Exception:
+                        logger.exception("Notifier error while posting trade")
             else:
                 logger.info("PLACE_ORDERS=False -> log-only mode")
 
             last_trade_date = trade_date
 
             # Monitor the trade until it's closed by SL/TP or until the hard exit time.
-            if PLACE_ORDERS:
+            if PLACE_ORDERS and order_active:
                 logger.info("Monitoring open trade for SL/TP or 12:00 hard exit.")
                 trade_closed_by_broker = False
                 while now_ny().time() < EXIT_T_T:
