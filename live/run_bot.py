@@ -307,6 +307,15 @@ def main_loop():
             if ny_now < entry_wait_dt:
                 time.sleep(10); continue
 
+            # Safety: Don't enter trades if the session is already over (e.g. late start)
+            if ny_now.time() >= EXIT_T_T:
+                logger.warning(f"Current time {ny_now.strftime('%H:%M')} is past hard exit {EXIT_T}. Skipping trade entry.")
+                last_trade_date = trade_date
+                summary["skipped"] += 1
+                handled_days.add(trade_date)
+                time.sleep(60)
+                continue
+
             # compute signal
             sig, reason = compute_signal(slice_win, slice_or)
             if sig is None:
@@ -315,6 +324,11 @@ def main_loop():
                     time.sleep(10)
                     continue
                 logger.info(f"No trade ({reason})")
+                # Optional: Tweet that no trade was taken
+                try:
+                    notifier.notify_trade(f"No trade taken ({reason})")
+                except Exception:
+                    logger.exception("Notifier error no trade")
                 last_trade_date = trade_date
                 summary["skipped"] += 1
                 handled_days.add(trade_date)
