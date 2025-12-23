@@ -62,10 +62,14 @@ def compute_signal(win_df: pd.DataFrame, or_df: pd.DataFrame):
     or_rng = or_high - or_low
     bottom_cut = or_low + BOT_PCT * or_rng
     top_cut    = or_high - TOP_PCT * or_rng
-    e = win_df.loc[win_df.index.time == ENTRY_T_T, "close"]
-    if e.empty:
+    
+    e_rows = win_df.loc[win_df.index.time == ENTRY_T_T]
+    if e_rows.empty:
         return None, "missing_entry"
-    entry = float(e.iloc[0])
+    # Ensure parity with historical data: only trade on completed candles
+    if "complete" in e_rows.columns and not e_rows.iloc[0]["complete"]:
+        return None, "entry_incomplete"
+    entry = float(e_rows.iloc[0]["close"])
     if entry >= top_cut:
         return ("long", entry, entry - SL_PTS, entry + TP_PTS), "long"
     elif entry <= bottom_cut:
@@ -295,6 +299,10 @@ def main_loop():
             # compute signal
             sig, reason = compute_signal(slice_win, slice_or)
             if sig is None:
+                if reason == "entry_incomplete":
+                    logger.info(f"Entry candle {ENTRY_T} present but not complete; waiting...")
+                    time.sleep(10)
+                    continue
                 logger.info(f"No trade ({reason})")
                 last_trade_date = trade_date
                 summary["skipped"] += 1
