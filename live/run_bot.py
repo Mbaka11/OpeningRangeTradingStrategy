@@ -228,14 +228,21 @@ def main_loop():
 
             has_entry = any(slice_win.index.time == ENTRY_T_T)
             has_exit  = any(slice_win.index.time == EXIT_T_T)
-            if ny_now.time() >= ENTRY_T_T and not has_entry:
+            
+            # Wait until the entry candle is fully closed (ENTRY_T + 1 minute)
+            # e.g. if Entry is 10:22, we wait until 10:23:00 to ensure we have the final close.
+            entry_wait_dt = NY.localize(datetime.combine(trade_date, ENTRY_T_T)) + timedelta(minutes=1)
+            
+            # Check for missing entry bar only after a buffer (e.g. 5 mins) to allow for latency/retries
+            if ny_now > (entry_wait_dt + timedelta(minutes=5)) and not has_entry:
                 if trade_date not in skipped_days:
                     skipped_days[trade_date] = "missing_entry_bar"
                     summary["skipped"] += 1
-                    logger.warning(f"Skipping day (missing entry bar {ENTRY_T})")
+                    logger.warning(f"Skipping day (missing entry bar {ENTRY_T} after 5m wait)")
                     handled_days.add(trade_date)
                     last_trade_date = trade_date
                 time.sleep(60); continue
+
             if ny_now.time() >= EXIT_T_T and not has_exit:
                 if trade_date not in skipped_days:
                     skipped_days[trade_date] = "missing_exit_bar"
@@ -282,8 +289,8 @@ def main_loop():
             if last_trade_date == trade_date:
                 time.sleep(30); continue
 
-            if ny_now.time() < ENTRY_T_T:
-                time.sleep(30); continue
+            if ny_now < entry_wait_dt:
+                time.sleep(10); continue
 
             # compute signal
             sig, reason = compute_signal(slice_win, slice_or)
