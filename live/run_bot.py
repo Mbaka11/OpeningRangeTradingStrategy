@@ -383,6 +383,8 @@ def main_loop():
                         stats_msg = f"Trade Stats: MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts"
                         logger.info(stats_msg)
                         notifier.notify_trade(stats_msg)
+                    else:
+                        logger.warning("Trade duration too short or candle data delayed; skipping MFE/MAE stats.")
                 except Exception:
                     logger.exception("Failed to calculate MFE/MAE")
             else: # If not placing orders, just wait until exit time as before

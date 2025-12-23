@@ -22,8 +22,8 @@ def submit_market_with_sl_tp(units: int, sl_price: float, tp_price: float):
             "instrument": OANDA_INSTRUMENT,
             "type": "MARKET",
             "positionFill": "DEFAULT",
-            "stopLossOnFill": {"price": f"{sl_price}"},
-            "takeProfitOnFill": {"price": f"{tp_price}"},
+            "stopLossOnFill": {"price": f"{sl_price:.2f}"},
+            "takeProfitOnFill": {"price": f"{tp_price:.2f}"},
         }
     }
     resp = requests.post(url, headers=_headers(), json=body, timeout=10)
