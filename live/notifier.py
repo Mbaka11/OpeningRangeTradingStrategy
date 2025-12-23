@@ -23,7 +23,7 @@ def can_post() -> bool:
     return ok
 
 
-def notify_trade(message: str, image_buffer=None):
+def notify_trade(message: str, image_buffer=None, images=None):
     if not can_post():
         logger.info(f"Notifier: would post (no creds): {message}")
         return {"status": "skipped", "reason": "no_credentials"}
@@ -36,16 +36,24 @@ def notify_trade(message: str, image_buffer=None):
         )
         
         media_ids = []
+        all_images = []
         if image_buffer:
+            all_images.append(image_buffer)
+        if images:
+            all_images.extend(images)
+
+        if all_images:
             # Use v1.1 API for media upload
             auth = tweepy.OAuth1UserHandler(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_SECRET)
             api = tweepy.API(auth)
-            try:
-                media = api.media_upload(filename="chart.png", file=image_buffer)
-                media_ids.append(media.media_id)
-                logger.info("Notifier: Image uploaded successfully")
-            except Exception as e:
-                logger.warning(f"Notifier: Image upload failed (likely Free Tier limit): {e}")
+            for i, img in enumerate(all_images):
+                try:
+                    if hasattr(img, 'seek'): img.seek(0)
+                    media = api.media_upload(filename=f"chart_{i}.png", file=img)
+                    media_ids.append(media.media_id)
+                    logger.info(f"Notifier: Image {i} uploaded successfully")
+                except Exception as e:
+                    logger.warning(f"Notifier: Image {i} upload failed (likely Free Tier limit): {e}")
 
         try:
             resp = client.create_tweet(text=message, media_ids=media_ids if media_ids else None)

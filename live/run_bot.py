@@ -531,6 +531,7 @@ if __name__ == "__main__":
         # Consolidated Report Builder
         report_lines = []
         img_buf = None
+        or_chart_buf = None
         
         # Extract date for report/chart
         r_date = datetime.now().date()
@@ -557,6 +558,14 @@ if __name__ == "__main__":
             t_cut = or_high - TOP_PCT * or_rng
             b_cut = or_low + BOT_PCT * or_rng
             
+            # Generate OR Chart
+            try:
+                or_chart_buf = plotting.create_or_chart(
+                    slice_or, r_date, or_high, or_low, t_cut, b_cut
+                )
+            except Exception:
+                logger.exception("Failed to generate OR chart in replay")
+
             report_lines.append("\n--- OR LEVELS ---")
             report_lines.append(f"Range: {or_low:.2f}-{or_high:.2f}")
             report_lines.append(f"Long > {t_cut:.2f} | Short < {b_cut:.2f}")
@@ -631,7 +640,11 @@ if __name__ == "__main__":
             tweet_msg = "\n".join(tweet_lines)
 
             try:
-                res = notifier.notify_trade(tweet_msg, image_buffer=img_buf)
+                charts = []
+                if or_chart_buf: charts.append(or_chart_buf)
+                if img_buf: charts.append(img_buf)
+
+                res = notifier.notify_trade(tweet_msg, images=charts)
                 if res and res.get("status") == "posted":
                     logger.info("Replay tweet sent.")
                 else:
