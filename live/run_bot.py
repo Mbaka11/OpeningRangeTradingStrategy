@@ -47,11 +47,12 @@ def now_ny():
 
 def format_session_overview() -> str:
     """Human-friendly summary of the configured session for logs/alerts."""
+    env_short = "Live" if "fxtrade" in broker_oanda.OANDA_API_BASE else "Practice"
     return (
         f"Session OR {OR_START}-{OR_END} NY, entry {ENTRY_T}, exit {EXIT_T}; "
-        f"instrument={broker_oanda.OANDA_INSTRUMENT} env={broker_oanda.OANDA_API_BASE}; "
-        f"size={POSITION_SIZE} point_val=${POINT_VAL:.2f}; "
-        f"zones top_pct={TOP_PCT:.2f} bottom_pct={BOT_PCT:.2f} SL={SL_PTS} TP={TP_PTS}; "
+        f"inst={broker_oanda.OANDA_INSTRUMENT} env={env_short}; "
+        f"size={POSITION_SIZE} pt_val=${POINT_VAL:.2f}; "
+        f"zones {TOP_PCT:.2f}/{BOT_PCT:.2f} SL={SL_PTS} TP={TP_PTS}; "
         f"orders={'ON' if PLACE_ORDERS else 'OFF'}"
     )
 
@@ -371,7 +372,8 @@ def main_loop():
                     closed = broker_oanda.close_all_trades()
                     logger.info(f"Hard exit close_all: {closed}")
                     try:
-                        notifier.notify_trade(f"Paper trade exit @ {EXIT_T} NY; forced flat. Details: {closed}")
+                        count = len(closed)
+                        notifier.notify_trade(f"Paper trade exit @ {EXIT_T} NY; forced flat. Closed {count} positions.")
                     except Exception:
                         logger.exception("Notifier error while posting exit")
                 
