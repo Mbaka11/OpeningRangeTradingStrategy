@@ -35,6 +35,14 @@ def main():
 
     except Exception as e:
         print(f"\n[ERROR] Could not fetch account summary: {e}")
+        if hasattr(e, 'response') and e.response is not None:
+             print(f"Server Response: {e.response.text}")
+             if e.response.status_code == 403:
+                 print("\n[TIP] 403 Forbidden usually means your API Token is stale.")
+                 print("      1. Go to OANDA Hub.")
+                 print("      2. Revoke your current token.")
+                 print("      3. Generate a NEW token.")
+                 print("      4. Update OANDA_API_TOKEN in your .env file.")
 
 if __name__ == "__main__":
     main()

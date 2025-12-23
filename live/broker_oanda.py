@@ -89,3 +89,11 @@ def get_account_summary():
     }
     logger.debug(f"Account summary: nav={summary['nav']} bal={summary['balance']} utpl={summary['unrealized_pl']}")
     return summary
+
+
+def get_accounts():
+    """Fetch list of all accounts authorized for this token."""
+    url = f"{OANDA_API_BASE}/accounts"
+    resp = requests.get(url, headers=_headers(), timeout=10)
+    resp.raise_for_status()
+    return resp.json()
