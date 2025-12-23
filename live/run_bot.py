@@ -285,8 +285,18 @@ def main_loop():
                     msg = (f"OR Levels {OR_START}-{OR_END}: {or_low:.2f}-{or_high:.2f} | "
                            f"Long > {t_cut:.2f} | Short < {b_cut:.2f}")
                     logger.info(msg)
+                    
+                    # Generate OR Chart
+                    img_buf = None
                     try:
-                        notifier.notify_trade(msg)
+                        img_buf = plotting.create_or_chart(
+                            slice_or, trade_date, or_high, or_low, t_cut, b_cut
+                        )
+                    except Exception:
+                        logger.exception("Failed to generate OR chart")
+
+                    try:
+                        notifier.notify_trade(msg, image_buffer=img_buf)
                     except Exception:
                         logger.exception("Notifier error OR levels")
                     or_announced_for = trade_date

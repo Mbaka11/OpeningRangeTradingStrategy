@@ -56,3 +56,36 @@ def create_trade_chart(df, trade_date, entry_time, exit_time,
     plt.close(fig)
     
     return buf
+
+def create_or_chart(df, trade_date, or_high, or_low, top_cut, bot_cut):
+    """
+    Generates a PNG image of the Opening Range formation (09:30-10:00).
+    """
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    # Plot Price
+    ax.plot(df.index, df["close"], label="Price", color="black", linewidth=1)
+    
+    # Plot OR Levels
+    ax.axhline(or_high, color="gray", linestyle="--", alpha=0.8, label="OR High")
+    ax.axhline(or_low, color="gray", linestyle="--", alpha=0.8, label="OR Low")
+    ax.fill_between(df.index, or_low, or_high, color="gray", alpha=0.1)
+    
+    # Plot Trigger Levels
+    ax.axhline(top_cut, color="blue", linestyle=":", alpha=0.6, label="Long Trigger")
+    ax.axhline(bot_cut, color="orange", linestyle=":", alpha=0.6, label="Short Trigger")
+
+    # Formatting
+    ax.set_title(f"Opening Range {trade_date} | {or_low:.2f} - {or_high:.2f}")
+    ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz=df.index.tz))
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+    
+    # Save to buffer
+    buf = io.BytesIO()
+    plt.tight_layout()
+    plt.savefig(buf, format="png", dpi=100)
+    buf.seek(0)
+    plt.close(fig)
+    
+    return buf
