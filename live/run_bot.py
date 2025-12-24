@@ -426,8 +426,10 @@ def main_loop():
                         
                         # Generate Chart
                         try:
+                            df_plot = df_trade.copy()
+                            df_plot.index = pd.to_datetime(df_plot["time_ny"])
                             img_buf = plotting.create_trade_chart(
-                                df_trade, trade_date, ENTRY_T_T, now_ny(), 
+                                df_plot, trade_date, ENTRY_T_T, now_ny(), 
                                 entry, float(df_trade.iloc[-1]["close"]), side, 
                                 or_high, or_low, sl, tp, mfe, mae
                             )
