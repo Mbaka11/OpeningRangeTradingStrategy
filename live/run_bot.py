@@ -391,17 +391,19 @@ def main_loop():
                     except Exception:
                         logger.exception("Failed to check open trades during monitoring. Assuming trade is still open.")
                 
+                exit_details = ""
                 if not trade_closed_by_broker:
                     logger.info(f"Hard exit time {EXIT_T} reached. Closing any open trades.")
                     closed = broker_oanda.close_all_trades()
                     logger.info(f"Hard exit close_all: {closed}")
-                    try:
-                        count = len(closed)
-                        notifier.notify_trade(f"Paper trade exit @ {EXIT_T} NY; forced flat. Closed {count} positions.")
-                    except Exception:
-                        logger.exception("Notifier error while posting exit")
+                    count = len(closed)
+                    exit_details = f"Hard Exit @ {EXIT_T} NY. Closed {count} positions.\n"
+                else:
+                    exit_details = "Closed by Broker (SL/TP).\n"
                 
                 # Post-trade MFE/MAE analysis
+                stats_msg = ""
+                img_buf = None
                 try:
                     # Fetch data covering the trade duration (Entry -> Now)
                     # Use a buffer (400 candles) to ensure we cover the start
@@ -421,8 +423,8 @@ def main_loop():
                             mfe = entry - df_trade["low"].min()
                             mae = df_trade["high"].max() - entry
                         
-                        stats_msg = f"Trade Stats: MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts"
-                        logger.info(stats_msg)
+                        stats_msg = f"Stats: MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts"
+                        logger.info(f"Trade Stats: MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts")
                         
                         # Generate Chart
                         try:
@@ -433,13 +435,20 @@ def main_loop():
                                 entry, float(df_trade.iloc[-1]["close"]), side, 
                                 or_high, or_low, sl, tp, mfe, mae
                             )
-                            notifier.notify_trade(stats_msg, image_buffer=img_buf)
                         except Exception:
-                            logger.exception("Failed to generate/post chart")
+                            logger.exception("Failed to generate chart")
                     else:
                         logger.warning("Trade duration too short or candle data delayed; skipping MFE/MAE stats.")
                 except Exception:
                     logger.exception("Failed to calculate MFE/MAE")
+
+                # Send Consolidated Tweet
+                try:
+                    full_msg = f"{exit_details}{stats_msg}"
+                    if full_msg.strip():
+                        notifier.notify_trade(full_msg, image_buffer=img_buf)
+                except Exception:
+                    logger.exception("Notifier error while posting exit/stats")
             else: # If not placing orders, just wait until exit time as before
                 while now_ny().time() < EXIT_T_T:
                     time.sleep(30)
