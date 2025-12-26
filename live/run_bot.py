@@ -212,6 +212,17 @@ def main_loop():
     session_started_for = None
     handled_days = set()
 
+    # RECOVERY: Attempt to load existing daily_details if restarting mid-day
+    try:
+        today_str = str(now_ny().date())
+        json_rec_path = summary_path / "daily_json" / f"{today_str}.json"
+        if json_rec_path.exists():
+            with open(json_rec_path, "r") as f:
+                daily_details = json.load(f)
+            logger.info(f"Recovered daily_details for {today_str} from disk.")
+    except Exception as e:
+        logger.warning(f"Could not recover existing JSON log: {e}")
+
     # Pre-open status
     try:
         overview = format_session_overview()
