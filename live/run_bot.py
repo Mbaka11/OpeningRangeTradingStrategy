@@ -4,7 +4,7 @@
 - One trade/day, SL/TP attached, hard flat at 12:00.
 - Log-only by default (set PLACE_ORDERS=True to call OANDA).
 """
-import time, os, sys, csv
+import time, os, sys, csv, json
 from datetime import datetime, timedelta
 import pytz
 import pandas as pd
@@ -17,6 +17,7 @@ from live import notifier, plotting
 from live.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
 from live.logging_utils import setup_logger
 from src import or_core
+from live.trade_types import DailyLog, SessionSetup, SignalDecision, TradeResult
 
 NY = pytz.timezone(OANDA_TIMEZONE)
 logger = setup_logger("bot")
@@ -41,6 +42,14 @@ OR_END_T = pd.Timestamp(OR_END).time()
 ENTRY_T_T = pd.Timestamp(ENTRY_T).time()
 EXIT_T_T = pd.Timestamp(EXIT_T).time()
 
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, (datetime, pd.Timestamp)):
+            return obj.isoformat()
+        if isinstance(obj, pd.DataFrame):
+            return obj.to_dict(orient="records")
+        return super().default(obj)
 
 def now_ny():
     return datetime.now(tz=NY)
@@ -184,6 +193,7 @@ def main_loop():
     summary_flushed_for = None
     or_announced_for = None
     session_announced_for = None
+    daily_details: Optional[DailyLog] = {}
     start_account_snapshot = None
     or_expected_rows = len(pd.date_range(pd.Timestamp(OR_START), pd.Timestamp(OR_END), freq="min"))
     skipped_days = {}
@@ -368,6 +378,23 @@ def main_loop():
                     b_cut = or_low + BOT_PCT * or_rng
                     msg = (f"OR Levels {OR_START}-{OR_END}: {or_low:.2f}-{or_high:.2f} | "
                            f"Long > {t_cut:.2f} | Short < {b_cut:.2f}")
+                    
+                    # ARCHIVE: Save Session & OR Setup
+                    daily_details["session_setup"] = {
+                        "date": str(trade_date),
+                        "instrument": broker_oanda.OANDA_INSTRUMENT,
+                        "strategy_params": {
+                            "entry_time": ENTRY_T,
+                            "exit_time": EXIT_T,
+                            "top_pct": TOP_PCT,
+                            "bot_pct": BOT_PCT,
+                            "sl_points": SL_PTS,
+                            "tp_points": TP_PTS
+                        },
+                        "or_high": or_high, "or_low": or_low, "or_range": or_rng,
+                        "or_completeness": f"{len(slice_or)}/{or_expected_rows}",
+                        "or_candles": slice_or.to_dict(orient="records")
+                    }
                     logger.info(msg)
                     
                     # Generate OR Chart
@@ -427,6 +454,16 @@ def main_loop():
             side, entry, sl, tp = sig
             logger.info(f"Signal {side} @ {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
             summary["signals"] += 1
+            # ARCHIVE: Save Signal context
+            # Recalculate bounds for logging as they are local to OR block
+            or_rng_log = daily_details["session_setup"]["or_range"]
+            daily_details["signal_decision"] = {
+                "signal_type": side,
+                "signal_reason": "strategy_signal",
+                "entry_price": entry,
+                "entry_bounds": {"top_cut": daily_details["session_setup"]["or_high"] - TOP_PCT * or_rng_log, "bottom_cut": daily_details["session_setup"]["or_low"] + BOT_PCT * or_rng_log},
+                "timestamp": str(ny_now)
+            }
             summary["last_signal"] = f"{trade_date} {side} {entry:.2f}"
 
             order_active = False
@@ -514,6 +551,15 @@ def main_loop():
                         
                         stats_msg = f"Stats: MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts"
                         logger.info(f"Trade Stats: MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts")
+                        
+                        # ARCHIVE: Save Trade Result & Path
+                        daily_details["trade_result"] = {
+                            "side": side,
+                            "pnl_points": 0.0, "pnl_usd": 0.0, # Placeholder, updated at session end if possible
+                            "exit_reason": exit_details.strip(),
+                            "mfe_points": mfe, "mae_points": mae,
+                            "trade_path_candles": df_trade.to_dict(orient="records")
+                        }
                         
                         # Generate Chart
                         try:
@@ -611,6 +657,23 @@ def main_loop():
                     if write_header:
                         writer.writeheader()
                     writer.writerow(row)
+                
+                # Save Rich JSON Log
+                if daily_details:
+                    json_dir = summary_path / "daily_json"
+                    json_dir.mkdir(parents=True, exist_ok=True)
+                    json_path = json_dir / f"{last_trade_date}.json"
+                    
+                    # Update PnL in trade_result if available from session summary
+                    if "trade_result" in daily_details and pnl_bal is not None:
+                         daily_details["trade_result"]["pnl_usd"] = pnl_bal
+                         # Estimate points from USD PnL
+                         if POINT_VAL > 0 and POSITION_SIZE > 0:
+                             daily_details["trade_result"]["pnl_points"] = pnl_bal / (POINT_VAL * POSITION_SIZE)
+
+                    with open(json_path, "w") as f:
+                        json.dump(daily_details, f, cls=DateTimeEncoder, indent=2)
+
                 with open(fname, "a", encoding="utf-8") as f:
                     f.write(msg + "\n")
                 logger.info(f"Wrote daily summary: {msg}")
@@ -623,6 +686,7 @@ def main_loop():
                 except Exception:
                     logger.exception("Notifier error while posting recap")
                 summary = {"signals": 0, "orders": 0, "skipped": 0, "errors": 0, "last_signal": None}
+                daily_details = {}
                 summary_flushed_for = last_trade_date
                 start_account_snapshot = None
                 session_started_for = None
