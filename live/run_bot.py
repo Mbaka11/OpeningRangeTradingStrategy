@@ -299,6 +299,30 @@ def main_loop():
             # OR completeness / zero-range guard
             if ny_now.time() >= OR_END_T:
                 if trade_date not in skipped_days:
+                    # Retry loop for fetching OR data
+                    or_slice_is_complete = False
+                    for i in range(3):  # 3 attempts
+                        # On attempt > 1, re-fetch data. Otherwise, use data from main loop fetch.
+                        if i > 0:
+                            df = data_feed.fetch_m1(count=400)
+                            slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
+                            slice_or  = data_feed.latest_slice(df, OR_START, OR_END)
+                            slice_win.index = pd.to_datetime(slice_win["time_ny"])
+                            slice_or.index  = pd.to_datetime(slice_or["time_ny"])
+
+                        if len(slice_or) == or_expected_rows:
+                            or_slice_is_complete = True
+                            if i > 0: # Log only if it wasn't complete on the first try
+                                logger.info(f"OR data is complete on attempt {i+1}.")
+                            break
+                        else:
+                            if i < 2: # Don't log retry message on the last attempt
+                                logger.warning(
+                                    f"OR data incomplete on attempt {i+1} "
+                                    f"({len(slice_or)}/{or_expected_rows} rows). Retrying in 15s."
+                                )
+                                time.sleep(15)
+
                     log_msg, tweet_msg, should_skip = check_or_completeness(
                         slice_or, or_expected_rows, trade_date, OR_START, OR_END, 
                         OR_INCOMPLETE_TOLERANCE, NY
@@ -319,6 +343,7 @@ def main_loop():
                         time.sleep(60)
                         continue
                     elif log_msg:
+                        # Log if it was incomplete but within tolerance
                         logger.warning(log_msg)
                 
                 or_high, or_low = slice_or["high"].max(), slice_or["low"].min()
