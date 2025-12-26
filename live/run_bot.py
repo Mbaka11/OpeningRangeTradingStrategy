@@ -34,6 +34,7 @@ TOP_PCT  = STRATEGY.get("parameters", {}).get("zones", {}).get("top_pct", 0.35)
 BOT_PCT  = STRATEGY.get("parameters", {}).get("zones", {}).get("bottom_pct", 0.35)
 SL_PTS   = STRATEGY.get("parameters", {}).get("risk", {}).get("stop_loss_points", 25)
 TP_PTS   = STRATEGY.get("parameters", {}).get("risk", {}).get("take_profit_points", 75)
+OR_INCOMPLETE_TOLERANCE = 2  # How many missing candles to tolerate in OR window before skipping.
 
 OR_START_T = pd.Timestamp(OR_START).time()
 OR_END_T = pd.Timestamp(OR_END).time()
@@ -145,6 +146,34 @@ def simulate_exit(win_df: pd.DataFrame, side: str, entry: float, sl: float, tp: 
     }
 
 
+def check_or_completeness(slice_or, or_expected_rows, trade_date, or_start, or_end, tolerance, ny_timezone):
+    """
+    Checks if the opening range data is complete within a tolerance.
+    
+    Returns:
+        A tuple (log_msg, tweet_msg, should_skip)
+    """
+    missing_rows = or_expected_rows - len(slice_or)
+    if missing_rows > 0:
+        expected_ts = pd.date_range(start=f"{trade_date} {or_start}", end=f"{trade_date} {or_end}", freq="min", tz=ny_timezone)
+        missing_ts = sorted(list(set(expected_ts) - set(slice_or.index)))
+        missing_ts_str = ", ".join([ts.strftime('%H:%M') for ts in missing_ts])
+
+        if missing_rows > tolerance:
+            # Returns a message indicating that the day should be skipped
+            log_msg = (f"Skipping day (OR incomplete rows={len(slice_or)} expected={or_expected_rows}). "
+                       f"Missing: {missing_ts_str}")
+            tweet_msg = f"WARNING: Skipping day (OR incomplete, missing {len(missing_ts)} candle(s) e.g. {missing_ts_str})"
+            if len(tweet_msg) > 280:
+                tweet_msg = tweet_msg[:277] + "..."
+            return log_msg, tweet_msg, True  # Skip = True
+        else:
+            # Returns a warning but indicates not to skip
+            log_msg = (f"OR incomplete but within tolerance (missing {missing_rows} rows: {missing_ts_str}). "
+                       f"Proceeding with {len(slice_or)} candles.")
+            return log_msg, None, False  # Skip = False
+    return None, None, False  # No missing rows, don't skip
+
 def main_loop():
     last_trade_date = None
     last_heartbeat_at = None
@@ -243,7 +272,12 @@ def main_loop():
                 if trade_date not in skipped_days:
                     skipped_days[trade_date] = "missing_entry_bar"
                     summary["skipped"] += 1
-                    logger.warning(f"Skipping day (missing entry bar {ENTRY_T} after 5m wait)")
+                    msg = f"Skipping day (missing entry bar {ENTRY_T} after 5m wait)"
+                    logger.warning(msg)
+                    try:
+                        notifier.notify_trade(f"WARNING: {msg}")
+                    except Exception:
+                        logger.exception("Notifier error while posting skip day alert")
                     handled_days.add(trade_date)
                     last_trade_date = trade_date
                 time.sleep(60); continue
@@ -252,27 +286,52 @@ def main_loop():
                 if trade_date not in skipped_days:
                     skipped_days[trade_date] = "missing_exit_bar"
                     summary["skipped"] += 1
-                    logger.warning(f"Skipping day (missing exit bar {EXIT_T})")
+                    msg = f"Skipping day (missing exit bar {EXIT_T})"
+                    logger.warning(msg)
+                    try:
+                        notifier.notify_trade(f"WARNING: {msg}")
+                    except Exception:
+                        logger.exception("Notifier error while posting skip day alert")
                     handled_days.add(trade_date)
                     last_trade_date = trade_date
                 time.sleep(60); continue
 
             # OR completeness / zero-range guard
             if ny_now.time() >= OR_END_T:
-                if len(slice_or) != or_expected_rows:
-                    if trade_date not in skipped_days:
+                if trade_date not in skipped_days:
+                    log_msg, tweet_msg, should_skip = check_or_completeness(
+                        slice_or, or_expected_rows, trade_date, OR_START, OR_END, 
+                        OR_INCOMPLETE_TOLERANCE, NY
+                    )
+                    
+                    if should_skip:
                         skipped_days[trade_date] = "or_incomplete"
                         summary["skipped"] += 1
-                        logger.warning(f"Skipping day (OR incomplete rows={len(slice_or)} expected={or_expected_rows})")
+                        logger.warning(log_msg)
+                        try:
+                            if tweet_msg:
+                                notifier.notify_trade(tweet_msg)
+                        except Exception:
+                            logger.exception("Notifier error while posting skip day alert")
+                        
                         handled_days.add(trade_date)
                         last_trade_date = trade_date
-                    time.sleep(60); continue
+                        time.sleep(60)
+                        continue
+                    elif log_msg:
+                        logger.warning(log_msg)
+                
                 or_high, or_low = slice_or["high"].max(), slice_or["low"].min()
                 if or_high == or_low:
                     if trade_date not in skipped_days:
                         skipped_days[trade_date] = "or_zero_range"
                         summary["skipped"] += 1
-                        logger.warning("Skipping day (OR range zero)")
+                        msg = "Skipping day (OR range zero)"
+                        logger.warning(msg)
+                        try:
+                            notifier.notify_trade(f"WARNING: {msg}")
+                        except Exception:
+                            logger.exception("Notifier error while posting skip day alert")
                         handled_days.add(trade_date)
                         last_trade_date = trade_date
                     time.sleep(60); continue
@@ -309,7 +368,12 @@ def main_loop():
 
             # Safety: Don't enter trades if the session is already over (e.g. late start)
             if ny_now.time() >= EXIT_T_T:
-                logger.warning(f"Current time {ny_now.strftime('%H:%M')} is past hard exit {EXIT_T}. Skipping trade entry.")
+                msg = f"Current time {ny_now.strftime('%H:%M')} is past hard exit {EXIT_T}. Skipping trade entry."
+                logger.warning(msg)
+                try:
+                    notifier.notify_trade(f"WARNING: {msg}")
+                except Exception:
+                    logger.exception("Notifier error while posting skip day alert")
                 last_trade_date = trade_date
                 summary["skipped"] += 1
                 handled_days.add(trade_date)

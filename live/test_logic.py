@@ -6,15 +6,43 @@ import sys
 from pathlib import Path
 import pandas as pd
 import pytest
+from datetime import date
+import pytz
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from live.run_bot import compute_signal
+from live.run_bot import compute_signal, check_or_completeness
 
 # Mock configuration constants for the test
 ENTRY_TIME_STR = "10:22"
 ENTRY_TIME = pd.Timestamp(ENTRY_TIME_STR).time()
+OR_START = "09:30"
+OR_END = "10:00"
+OR_INCOMPLETE_TOLERANCE = 2
+NY = pytz.timezone("America/New_York")
+
+
+@pytest.fixture
+def mock_or_data():
+    def _creator(missing_rows=0):
+        trade_date = date(2025, 12, 22)
+        expected_ts = pd.date_range(start=f"{trade_date} {OR_START}", end=f"{trade_date} {OR_END}", freq="min", tz=NY)
+        
+        # Create a full OR dataframe
+        df = pd.DataFrame({
+            "time_ny": expected_ts,
+            "high": 100,
+            "low": 90
+        })
+        df.index = df["time_ny"]
+        
+        # If we need to simulate missing rows, drop them
+        if missing_rows > 0:
+            df = df.drop(df.index[:missing_rows])
+            
+        return df, len(expected_ts), trade_date
+    return _creator
 
 def create_mock_data(entry_price, complete=True):
     """Creates a 1-row DataFrame representing the entry candle."""
@@ -61,3 +89,34 @@ def test_replay_scenario_complete_candle():
     assert side == "short"
     assert reason == "short"
     print("[PASS] Replay Scenario: Complete candle correctly triggers signal.")
+
+
+def test_or_completeness_full(mock_or_data):
+    """Test OR completeness check when data is full."""
+    slice_or, or_expected_rows, trade_date = mock_or_data(missing_rows=0)
+    log_msg, tweet_msg, should_skip = check_or_completeness(
+        slice_or, or_expected_rows, trade_date, OR_START, OR_END, OR_INCOMPLETE_TOLERANCE, NY
+    )
+    assert not should_skip
+    assert log_msg is None
+    assert tweet_msg is None
+
+def test_or_completeness_tolerant(mock_or_data):
+    """Test OR completeness check when data is missing but within tolerance."""
+    slice_or, or_expected_rows, trade_date = mock_or_data(missing_rows=2)
+    log_msg, tweet_msg, should_skip = check_or_completeness(
+        slice_or, or_expected_rows, trade_date, OR_START, OR_END, OR_INCOMPLETE_TOLERANCE, NY
+    )
+    assert not should_skip
+    assert "incomplete but within tolerance" in log_msg
+    assert tweet_msg is None
+
+def test_or_completeness_skipped(mock_or_data):
+    """Test OR completeness check when data is missing beyond tolerance."""
+    slice_or, or_expected_rows, trade_date = mock_or_data(missing_rows=3)
+    log_msg, tweet_msg, should_skip = check_or_completeness(
+        slice_or, or_expected_rows, trade_date, OR_START, OR_END, OR_INCOMPLETE_TOLERANCE, NY
+    )
+    assert should_skip
+    assert "Skipping day" in log_msg
+    assert "WARNING: Skipping day" in tweet_msg
