@@ -98,11 +98,15 @@ sudo docker ps
 sudo docker stop <ID>
 sudo docker rm <ID>
 
-# 3. Start the new version (Linking the .env file)
+# 3. Create logs directory (to persist data across updates)
+mkdir -p $(pwd)/logs
+
+# 4. Start the new version (Linking .env and mounting logs)
 sudo docker run -d \
   --name trading-bot \
   --restart always \
   --env-file .env \
+  -v $(pwd)/logs:/app/live/logs \
   gcr.io/onyx-seeker-479417-d5/my-bot-image:latest
 
 ```

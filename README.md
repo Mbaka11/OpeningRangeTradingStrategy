@@ -138,6 +138,8 @@ Keep the `.env` file out of version control; `.gitignore` already excludes it.
 - `scripts/` — helper scripts:
   - `verify_account.py` — check connection, currency, and margin availability.
   - `list_accounts.py` — list all accounts accessible by the current token.
+  - `analyze_json_logs.py` — generates performance metrics and charts from daily JSON logs.
+  - `run_analysis_cron.sh` — wrapper for scheduled analysis.
 
 ### Quick replay workflow (fetch a day and simulate)
 
