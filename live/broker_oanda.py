@@ -97,3 +97,19 @@ def get_accounts():
     resp = requests.get(url, headers=_headers(), timeout=10)
     resp.raise_for_status()
     return resp.json()
+
+def get_current_spread() -> float:
+    """Fetch current spread (Ask - Bid) for the configured instrument."""
+    url = f"{OANDA_API_BASE}/accounts/{OANDA_ACCOUNT_ID}/pricing"
+    params = {"instruments": OANDA_INSTRUMENT}
+    try:
+        resp = requests.get(url, headers=_headers(), params=params, timeout=5)
+        resp.raise_for_status()
+        prices = resp.json().get("prices", [])
+        if prices:
+            bid = float(prices[0]["bids"][0]["price"])
+            ask = float(prices[0]["asks"][0]["price"])
+            return ask - bid
+    except Exception as e:
+        logger.warning(f"Failed to fetch spread: {e}")
+    return 0.0

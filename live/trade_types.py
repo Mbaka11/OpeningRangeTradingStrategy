@@ -38,6 +38,11 @@ class SignalDecision(TypedDict):
     entry_bounds: EntryBounds
     timestamp: str
 
+class PreTradeChecks(TypedDict):
+    spread: float
+    volatility_atr_14: float
+    timestamp: str
+
 class TradeResult(TypedDict):
     side: str
     pnl_points: Optional[float]
@@ -49,5 +54,6 @@ class TradeResult(TypedDict):
 
 class DailyLog(TypedDict):
     session_setup: SessionSetup
+    pre_trade_checks: Optional[PreTradeChecks]
     signal_decision: Optional[SignalDecision]
     trade_result: Optional[TradeResult]

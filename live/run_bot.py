@@ -18,7 +18,6 @@ from live.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
 from live.logging_utils import setup_logger
 from src import or_core
 from live.trade_types import DailyLog, SessionSetup, SignalDecision, TradeResult
-
 NY = pytz.timezone(OANDA_TIMEZONE)
 logger = setup_logger("bot")
 PLACE_ORDERS = True  # toggle to True when ready
@@ -182,6 +181,19 @@ def check_or_completeness(slice_or, or_expected_rows, trade_date, or_start, or_e
                        f"Proceeding with {len(slice_or)} candles.")
             return log_msg, None, False  # Skip = False
     return None, None, False  # No missing rows, don't skip
+
+def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
+    """Calculates the Average True Range (ATR) for the given DataFrame."""
+    if len(df) < period + 1:
+        return 0.0
+    high = df['high']
+    low = df['low']
+    close = df['close']
+    tr1 = high - low
+    tr2 = (high - close.shift()).abs()
+    tr3 = (low - close.shift()).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    return tr.rolling(period).mean().iloc[-1]
 
 def main_loop():
     last_trade_date = None
@@ -431,6 +443,19 @@ def main_loop():
                 handled_days.add(trade_date)
                 time.sleep(60)
                 continue
+
+            # PRE-TRADE CHECKS: Log Volatility & Spread before decision
+            if "pre_trade_checks" not in daily_details:
+                current_spread = 0.0
+                if PLACE_ORDERS: # Only fetch live spread if we are actually trading/connected
+                    current_spread = broker_oanda.get_current_spread()
+                
+                current_atr = calculate_atr(df, period=14)
+                daily_details["pre_trade_checks"] = {
+                    "spread": current_spread,
+                    "volatility_atr_14": current_atr,
+                    "timestamp": str(ny_now)
+                }
 
             # compute signal
             sig, reason = compute_signal(slice_win, slice_or)
