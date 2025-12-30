@@ -11,7 +11,8 @@ import pandas as pd
 
 def create_trade_chart(df, trade_date, entry_time, exit_time, 
                        entry_price, exit_price, side, 
-                       or_high, or_low, sl, tp, mfe, mae):
+                       or_high, or_low, sl, tp, mfe, mae,
+                       exit_reason=None):
     """
     Generates a PNG image of the trade session.
     Returns: io.BytesIO object containing the image.
@@ -53,11 +54,15 @@ def create_trade_chart(df, trade_date, entry_time, exit_time,
     if tp: ax.axhline(tp, color=c_tp, linestyle=":", alpha=0.8, label="TP", linewidth=1.5)
 
     # Exit Marker
+    exit_label = "Exit"
+    if exit_reason:
+        exit_label = f"Exit ({exit_reason.upper()})"
     if exit_price and exit_time:
-        ax.scatter([exit_time], [exit_price], color=c_exit, marker="X", s=120, zorder=5, label="Exit", edgecolors='white')
+        ax.scatter([exit_time], [exit_price], color=c_exit, marker="X", s=120, zorder=5, label=exit_label, edgecolors='white')
 
     # Formatting
-    ax.set_title(f"Trade {trade_date} | {side.upper()} | MFE +{mfe:.1f} / MAE -{mae:.1f}", fontsize=12, fontweight='bold', color=c_price)
+    exit_tag = f" | Exit {exit_reason.upper()}" if exit_reason else ""
+    ax.set_title(f"Trade {trade_date} | {side.upper()} | MFE +{mfe:.1f} / MAE -{mae:.1f}{exit_tag}", fontsize=12, fontweight='bold', color=c_price)
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz=df.index.tz))
     ax.grid(True, alpha=0.3, linestyle='--')
     ax.legend(loc="best", frameon=True, framealpha=0.9)

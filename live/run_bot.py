@@ -553,6 +553,9 @@ def main_loop():
                     except Exception:
                         logger.exception("Failed to check open trades during monitoring. Assuming trade is still open.")
                 
+                exit_reason = None
+                exit_px = None
+                exit_ts = None
                 exit_details = ""
                 if not trade_closed_by_broker:
                     logger.info(f"Hard exit time {EXIT_T} reached. Closing any open trades.")
@@ -560,12 +563,15 @@ def main_loop():
                     logger.info(f"Hard exit close_all: {closed}")
                     count = len(closed)
                     exit_details = f"Hard Exit @ {EXIT_T} NY. Closed {count} positions.\n"
+                    exit_reason = "time"
                 else:
-                    exit_details = "Closed by Broker (SL/TP).\n"
+                    logger.info("Trade closed by broker; classifying exit using price path.")
                 
                 # Post-trade MFE/MAE analysis
                 stats_msg = ""
                 img_buf = None
+                mfe = 0.0
+                mae = 0.0
                 try:
                     # Fetch data covering the trade duration (Entry -> Now)
                     # Use a buffer (400 candles) to ensure we cover the start
@@ -578,33 +584,40 @@ def main_loop():
                     df_trade = df_post.loc[mask]
                     
                     if not df_trade.empty:
-                        if side == "long":
-                            mfe = df_trade["high"].max() - entry
-                            mae = entry - df_trade["low"].min()
-                        else:
-                            mfe = entry - df_trade["low"].min()
-                            mae = df_trade["high"].max() - entry
+                        df_plot = df_trade.copy()
+                        df_plot.index = pd.to_datetime(df_plot["time_ny"])
+
+                        sim_res = simulate_exit(df_plot, side, entry, sl, tp)
+                        exit_reason = exit_reason or sim_res.get("exit_reason")
+                        exit_px = sim_res.get("exit_px")
+                        exit_ts = sim_res.get("exit_ts")
+                        mfe = sim_res.get("mfe", 0.0)
+                        mae = sim_res.get("mae", 0.0)
+
+                        if exit_px is None:
+                            exit_px = float(df_plot.iloc[-1]["close"])
+                        if exit_ts is None:
+                            exit_ts = df_plot.index.max()
                         
                         stats_msg = f"Stats: MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts"
-                        logger.info(f"Trade Stats: MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts")
+                        reason_for_log = exit_reason.upper() if exit_reason else "UNKNOWN"
+                        logger.info(f"Trade Stats ({reason_for_log}): MFE +{mfe:.2f} pts | MAE -{mae:.2f} pts | exit_px {exit_px:.2f}")
                         
                         # ARCHIVE: Save Trade Result & Path
                         daily_details["trade_result"] = {
                             "side": side,
                             "pnl_points": 0.0, "pnl_usd": 0.0, # Placeholder, updated at session end if possible
-                            "exit_reason": exit_details.strip(),
+                            "exit_reason": exit_reason or "unknown",
                             "mfe_points": mfe, "mae_points": mae,
                             "trade_path_candles": df_trade.to_dict(orient="records")
                         }
                         
                         # Generate Chart
                         try:
-                            df_plot = df_trade.copy()
-                            df_plot.index = pd.to_datetime(df_plot["time_ny"])
                             img_buf = plotting.create_trade_chart(
-                                df_plot, trade_date, ENTRY_T_T, now_ny(), 
-                                entry, float(df_trade.iloc[-1]["close"]), side, 
-                                or_high, or_low, sl, tp, mfe, mae
+                                df_plot, trade_date, ENTRY_T_T, exit_ts, 
+                                entry, exit_px, side, 
+                                or_high, or_low, sl, tp, mfe, mae, exit_reason=exit_reason
                             )
                         except Exception:
                             logger.exception("Failed to generate chart")
@@ -615,6 +628,22 @@ def main_loop():
 
                 # Send Consolidated Tweet
                 try:
+                    exit_px_disp = f"{exit_px:.2f}" if exit_px is not None else "n/a"
+                    reason_text = {
+                        "sl": "Stop Loss hit",
+                        "tp": "Take Profit hit",
+                        "time": f"Hard Exit @ {EXIT_T} NY",
+                    }
+                    if trade_closed_by_broker and exit_reason in ("sl", "tp"):
+                        exit_details = f"{reason_text[exit_reason]} @ {exit_px_disp} (broker).\n"
+                    elif exit_reason == "time":
+                        exit_details = reason_text["time"] + ".\n"
+                    elif trade_closed_by_broker:
+                        exit_details = "Closed by broker (reason unknown).\n"
+                    else:
+                        px_note = f" @ {exit_px_disp}" if exit_px is not None else ""
+                        exit_details = f"Closed{px_note}.\n"
+
                     full_msg = f"{exit_details}{stats_msg}"
                     if full_msg.strip():
                         notifier.notify_trade(full_msg, image_buffer=img_buf)
@@ -813,7 +842,7 @@ if __name__ == "__main__":
                             slice_win, r_date, 
                             ENTRY_T_T, res['exit_ts'], 
                             entry, res['exit_px'], side, 
-                            slice_or["high"].max(), slice_or["low"].min(), sl, tp, res['mfe'], res['mae']
+                            slice_or["high"].max(), slice_or["low"].min(), sl, tp, res['mfe'], res['mae'], exit_reason=res['exit_reason']
                         )
                     except Exception:
                         logger.exception("Notifier error while generating replay chart")
