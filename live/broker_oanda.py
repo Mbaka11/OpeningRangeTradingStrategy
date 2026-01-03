@@ -13,22 +13,33 @@ def _headers():
     }
 
 
-def submit_market_with_sl_tp(units: int, sl_price: float, tp_price: float):
-    """Place a market order with attached SL/TP. Units: positive=buy, negative=sell."""
+def submit_market_with_sl_tp(units: int, sl_price: float = None, tp_price: float = None, sl_distance: float = None, tp_distance: float = None):
+    """Place a market order with attached SL/TP. Supports fixed Price OR Distance."""
     url = f"{OANDA_API_BASE}/accounts/{OANDA_ACCOUNT_ID}/orders"
-    body = {
-        "order": {
-            "units": str(units),
-            "instrument": OANDA_INSTRUMENT,
-            "type": "MARKET",
-            "positionFill": "DEFAULT",
-            "stopLossOnFill": {"price": f"{sl_price:.2f}"},
-            "takeProfitOnFill": {"price": f"{tp_price:.2f}"},
-        }
+    
+    order_body = {
+        "units": str(units),
+        "instrument": OANDA_INSTRUMENT,
+        "type": "MARKET",
+        "positionFill": "DEFAULT",
     }
+    
+    # Handle Stop Loss (Distance takes priority if both provided, or use logic as needed)
+    if sl_distance is not None:
+        order_body["stopLossOnFill"] = {"distance": f"{sl_distance:.2f}"}
+    elif sl_price is not None:
+        order_body["stopLossOnFill"] = {"price": f"{sl_price:.2f}"}
+        
+    # Handle Take Profit
+    if tp_distance is not None:
+        order_body["takeProfitOnFill"] = {"distance": f"{tp_distance:.2f}"}
+    elif tp_price is not None:
+        order_body["takeProfitOnFill"] = {"price": f"{tp_price:.2f}"}
+
+    body = {"order": order_body}
     resp = requests.post(url, headers=_headers(), json=body, timeout=10)
     resp.raise_for_status()
-    logger.info(f"Order sent units={units} sl={sl_price} tp={tp_price}")
+    logger.info(f"Order sent units={units} sl_dist={sl_distance} tp_dist={tp_distance} (or px {sl_price}/{tp_price})")
     return resp.json()
 
 

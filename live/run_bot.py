@@ -262,7 +262,7 @@ def main_loop():
                     logger.exception("Could not fetch account summary at session start")
 
             fetch_started = datetime.utcnow()
-            df = data_feed.fetch_m1(count=400)
+            df = data_feed.fetch_m1(count=600)
             fetch_latency_ms = int((datetime.utcnow() - fetch_started).total_seconds() * 1000)
             slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
             slice_or  = data_feed.latest_slice(df, OR_START, OR_END)
@@ -300,6 +300,32 @@ def main_loop():
             # e.g. if Entry is 10:22, we wait until 10:23:00 to ensure we have the final close.
             entry_wait_dt = NY.localize(datetime.combine(trade_date, ENTRY_T_T)) + timedelta(minutes=1)
             
+            if last_trade_date == trade_date:
+                time.sleep(30); continue
+
+            # Safety: Don't enter trades if the session is already over (e.g. late start)
+            if ny_now.time() >= EXIT_T_T:
+                # Safety: Ensure any lingering trades are closed if we wake up past exit time
+                try:
+                    if broker_oanda.get_open_trades():
+                        logger.warning("Found open trades past hard exit time. Closing all.")
+                        broker_oanda.close_all_trades()
+                        notifier.notify_trade("WARNING: Closed lingering trades found past hard exit.")
+                except Exception:
+                    logger.exception("Failed to check/close trades in safety block")
+
+                msg = f"Current time {ny_now.strftime('%H:%M')} is past hard exit {EXIT_T}. Skipping trade entry."
+                logger.warning(msg)
+                try:
+                    notifier.notify_trade(f"WARNING: {msg}")
+                except Exception:
+                    logger.exception("Notifier error while posting skip day alert")
+                last_trade_date = trade_date
+                summary["skipped"] += 1
+                handled_days.add(trade_date)
+                time.sleep(60)
+                continue
+
             # Check for missing entry bar only after a buffer (e.g. 5 mins) to allow for latency/retries
             if ny_now > (entry_wait_dt + timedelta(minutes=5)) and not has_entry:
                 if trade_date not in skipped_days:
@@ -337,7 +363,7 @@ def main_loop():
                     for i in range(3):  # 3 attempts
                         # On attempt > 1, re-fetch data. Otherwise, use data from main loop fetch.
                         if i > 0:
-                            df = data_feed.fetch_m1(count=400)
+                            df = data_feed.fetch_m1(count=600)
                             slice_win = data_feed.latest_slice(df, OR_START, EXIT_T)
                             slice_or  = data_feed.latest_slice(df, OR_START, OR_END)
                             slice_win.index = pd.to_datetime(slice_win["time_ny"])
@@ -435,25 +461,8 @@ def main_loop():
                         logger.exception("Notifier error OR levels")
                     or_announced_for = trade_date
 
-            if last_trade_date == trade_date:
-                time.sleep(30); continue
-
             if ny_now < entry_wait_dt:
                 time.sleep(10); continue
-
-            # Safety: Don't enter trades if the session is already over (e.g. late start)
-            if ny_now.time() >= EXIT_T_T:
-                msg = f"Current time {ny_now.strftime('%H:%M')} is past hard exit {EXIT_T}. Skipping trade entry."
-                logger.warning(msg)
-                try:
-                    notifier.notify_trade(f"WARNING: {msg}")
-                except Exception:
-                    logger.exception("Notifier error while posting skip day alert")
-                last_trade_date = trade_date
-                summary["skipped"] += 1
-                handled_days.add(trade_date)
-                time.sleep(60)
-                continue
 
             # PRE-TRADE CHECKS: Log Volatility & Spread before decision
             if "pre_trade_checks" not in daily_details:
@@ -507,7 +516,11 @@ def main_loop():
                 # Scale units by POINT_VAL so OANDA PnL matches the $80/pt risk model
                 qty = int(POSITION_SIZE * POINT_VAL)
                 units = qty if side == "long" else -qty
-                resp = broker_oanda.submit_market_with_sl_tp(units=units, sl_price=sl, tp_price=tp)
+                
+                # Use DISTANCE to ensure fixed risk ($2000) regardless of slippage
+                resp = broker_oanda.submit_market_with_sl_tp(
+                    units=units, sl_distance=SL_PTS, tp_distance=TP_PTS
+                )
                 
                 # Check if order was immediately rejected (e.g. INSUFFICIENT_MARGIN)
                 if "orderCancelTransaction" in resp:
@@ -528,6 +541,18 @@ def main_loop():
                     # Order accepted
                     order_active = True
                     logger.info(f"Order placed: {resp}")
+                    
+                    # Log actual risk based on fill price vs fixed SL
+                    try:
+                        fill_tx = resp.get("orderFillTransaction", {})
+                        fill_px = float(fill_tx.get("price", 0.0))
+                        if fill_px > 0:
+                            actual_risk_pts = abs(fill_px - sl)
+                            actual_risk_usd = actual_risk_pts * abs(units) # Assuming 1 unit = $1/pt
+                            logger.info(f"Risk Monitor: Fill {fill_px:.2f} | SL {sl:.2f} | Dist {actual_risk_pts:.2f} pts | Risk ${actual_risk_usd:.2f}")
+                    except Exception:
+                        logger.warning("Could not calculate actual risk from fill.")
+
                     summary["orders"] += 1
                     try:
                         notifier.notify_trade(f"Paper trade {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} ({trade_date})")
