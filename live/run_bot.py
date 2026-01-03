@@ -547,11 +547,21 @@ def main_loop():
                         fill_tx = resp.get("orderFillTransaction", {})
                         fill_px = float(fill_tx.get("price", 0.0))
                         if fill_px > 0:
-                            actual_risk_pts = abs(fill_px - sl)
-                            actual_risk_usd = actual_risk_pts * abs(units) # Assuming 1 unit = $1/pt
-                            logger.info(f"Risk Monitor: Fill {fill_px:.2f} | SL {sl:.2f} | Dist {actual_risk_pts:.2f} pts | Risk ${actual_risk_usd:.2f}")
+                            # RE-ALIGN STRATEGY VARIABLES TO FILL
+                            # This ensures "Fixed 25 points" is respected in charts/stats/logs
+                            entry = fill_px
+                            if side == "long":
+                                sl = entry - SL_PTS
+                                tp = entry + TP_PTS
+                            else:
+                                sl = entry + SL_PTS
+                                tp = entry - TP_PTS
+                            
+                            risk_usd = SL_PTS * abs(units)
+                            logger.info(f"Risk Monitor: Fill {fill_px:.2f} | Risk Fixed at {SL_PTS} pts (${risk_usd:.2f})")
+                            logger.info(f"Aligned Strategy Levels to Fill: Entry {entry:.2f} | SL {sl:.2f} | TP {tp:.2f}")
                     except Exception:
-                        logger.warning("Could not calculate actual risk from fill.")
+                        logger.warning("Could not parse fill details; stats may use signal price.")
 
                     summary["orders"] += 1
                     try:
