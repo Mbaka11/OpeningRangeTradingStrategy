@@ -22,8 +22,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Create logs directory
-RUN mkdir -p /app/logs /app/services/trading/logs
+# Create logs directories for all services
+RUN mkdir -p /app/logs/trading /app/logs/govtrades
 
 # Default entrypoint - can be overridden with docker run command
 # Usage:

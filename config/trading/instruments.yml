@@ -1,0 +1,34 @@
+market:
+  instrument: "NSXUSD"
+  point_value_usd: 80.0
+  tick_size: 0.25 # baseline assumption; adjust to your broker's minimum increment
+
+session:
+  timezone: "America/New_York"
+  rth_start: "09:30"
+  rth_end: "16:00"
+  or_window:
+    start: "09:30"
+    end_inclusive: "10:00" # OR includes the 10:00 bar
+  entry_time: "10:22"
+  hard_exit_time: "12:00"
+
+costs:
+  fees_per_side_usd: 2.0 # baseline round-turn commission per side (adjust to your broker)
+  slippage_points: 0.5 # conservative round-trip slippage in points; tweak after checking fills
+
+data:
+  delimiter: ";"
+  columns: ["datetime", "open", "high", "low", "close", "volume"]
+  datetime_format: "%Y%m%d %H%M%S"
+  source_timezone: null # TODO: set if known (e.g., "UTC"); will map to America/New_York
+  has_premarket: false
+
+policies:
+  require_complete_or_window: true # must have all OR minutes 09:30–10:00 inclusive
+  require_entry_bar: true # must have 10:22
+  require_exit_bar: true # must have 12:00
+  skip_zero_or_range: true
+  min_or_range_points: 0.0
+  skip_days_with_gaps: true
+  skip_days_with_premarket_detected: true

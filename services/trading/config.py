@@ -11,10 +11,11 @@ import yaml
 load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-CONFIG_DIR = ROOT / "config"
+CONFIG_DIR = ROOT / "config" / "trading"
 
 
 def load_yaml(name: str):
+    """Load a YAML config file from config/trading/."""
     path = CONFIG_DIR / name
     with open(path, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)

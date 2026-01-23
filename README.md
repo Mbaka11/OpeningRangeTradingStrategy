@@ -1,198 +1,219 @@
-# Opening Range Trading Bot
+# OpeningRange
 
-> A modular Python trading bot running on GCP, with an Opening Range intraday strategy and extensible service architecture.
+A multi-service Python project running on GCP, featuring:
 
-## Repository Structure
+- **Trading Bot** - Opening Range strategy on NSXUSD (NAS100)
+- **GovTrades** - (Coming Soon) Congressional PTR filing monitor
+
+## Project Structure
 
 ```
 OpeningRange/
-├── config/                     # YAML configuration files
-│   ├── instruments.yml         # Market settings (instrument, session times)
-│   ├── strategy.yml            # Strategy parameters (zones, SL/TP)
-│   └── govtrades.yml           # GovTrades config (future)
-├── services/                   # Independent service modules
-│   ├── trading/                # Opening Range trading bot
-│   │   ├── run_bot.py          # Main entry point
-│   │   ├── broker_oanda.py     # OANDA API wrapper
-│   │   ├── data_feed.py        # M1 candle fetcher
-│   │   ├── config.py           # Config loader
-│   │   ├── plotting.py         # Chart generation
-│   │   ├── trade_types.py      # Type definitions
-│   │   ├── fetch_session.py    # Historical data fetcher
-│   │   ├── test_logic.py       # Unit tests
-│   │   └── logs/               # Service logs
-│   └── govtrades/              # Congress trades monitor (future)
-├── shared/                     # Cross-service utilities
-│   ├── logging_utils.py        # TZ-aware rotating logger
-│   └── notifier.py             # Twitter/X posting
-├── src/                        # Core strategy logic (used by notebooks)
-│   └── or_core.py
-├── notebooks/                  # Research & backtesting
-├── scripts/                    # Utility scripts
-├── data/raw/                   # Historical & replay data
-├── reports/                    # Generated reports & figures
-├── .env.example                # Environment template
-├── Dockerfile                  # Container definition
-├── DEPLOYMENT.md               # GCP deployment guide
-└── requirements.txt            # Python dependencies
+├── config/                          # Configuration files
+│   ├── trading/                        # Trading service configs
+│   │   ├── instruments.yml               # Market/session settings
+│   │   └── strategy.yml                  # Strategy parameters
+│   └── govtrades/                      # GovTrades configs (future)
+│
+├── data/                            # Data files
+│   ├── trading/                        # Trading data
+│   │   ├── historical/                   # Backtest data (DAT_ASCII_*.csv)
+│   │   └── replay/                       # Paper trading replays
+│   └── govtrades/                      # GovTrades data (future)
+│
+├── docs/                            # Documentation
+│   ├── trading/                        # Trading strategy docs
+│   └── govtrades/                      # GovTrades specification
+│       └── GovTrades.md
+│
+├── logs/                            # Runtime logs
+│   ├── trading/                        # Trading bot logs
+│   └── govtrades/                      # GovTrades logs (future)
+│
+├── notebooks/                       # Jupyter notebooks
+│   ├── trading/                        # Strategy analysis notebooks
+│   │   ├── 01_spec_strategy.ipynb
+│   │   ├── 02_data_audit.ipynb
+│   │   ├── 03_baseline_backtest.ipynb
+│   │   ├── 04_parameter_robustness.ipynb
+│   │   ├── 05_performance_risk.ipynb
+│   │   └── 99_compare_replay_vs_backtest.ipynb
+│   └── govtrades/                      # GovTrades notebooks (future)
+│
+├── reports/                         # Generated reports
+│   ├── trading/                        # Trading reports
+│   │   ├── figures/                      # Charts (audit, backtest, risk)
+│   │   └── tables/                       # CSV exports
+│   └── govtrades/                      # GovTrades reports (future)
+│
+├── scripts/                         # Utility scripts
+│   ├── trading/                        # Trading utilities
+│   │   ├── verify_account.py
+│   │   ├── list_accounts.py
+│   │   └── analyze_json_logs.py
+│   └── govtrades/                      # GovTrades utilities (future)
+│
+├── services/                        # Service implementations
+│   ├── trading/                        # Opening Range trading bot
+│   │   ├── run_bot.py                    # Main entry point
+│   │   ├── or_core.py                    # Strategy logic
+│   │   ├── broker_oanda.py               # OANDA API wrapper
+│   │   ├── data_feed.py                  # M1 candle fetcher
+│   │   ├── plotting.py                   # Chart generation
+│   │   ├── config.py                     # Config loader
+│   │   ├── trade_types.py                # Data classes
+│   │   ├── fetch_session.py              # Session data fetcher
+│   │   └── test_logic.py                 # Unit tests
+│   └── govtrades/                      # GovTrades service (future)
+│
+├── shared/                          # Cross-service utilities
+│   ├── logging_utils.py                # TZ-aware rotating logger
+│   └── notifier.py                     # Twitter/X posting
+│
+├── Dockerfile                       # Container definition
+├── DEPLOYMENT.md                    # Deployment guide
+├── COPILOT_INSTRUCTIONS.md          # Development workflow
+├── requirements.txt                 # Python dependencies
+└── .env.example                     # Environment template
 ```
 
 ## Quick Start
 
-### 1. Setup Environment
+### 1. Environment Setup
 
 ```bash
-# Clone and enter repo
-cd OpeningRange
+# Clone and enter directory
+git clone <repo> && cd OpeningRange
 
 # Create virtual environment
-python -m venv .venv
-source .venv/bin/activate  # Linux/Mac
-# .venv\Scripts\activate   # Windows
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Copy and configure environment
+# Configure environment
 cp .env.example .env
-# Edit .env with your credentials
+# Edit .env with your API keys
 ```
 
-### 2. Run Trading Bot
+### 2. Verify OANDA Connection
 
 ```bash
-# Live/Paper mode (connects to OANDA)
+python scripts/trading/verify_account.py
+```
+
+### 3. Run Trading Bot
+
+**Live Mode:**
+
+```bash
 python -m services.trading.run_bot
-
-# Replay mode (from historical file)
-REPLAY_FILE=data/raw/replay_2025-01-02.csv python -m services.trading.run_bot
-
-# Replay with tweets
-REPLAY_TWEETS=true REPLAY_FILE=data/raw/replay_2025-01-02.csv python -m services.trading.run_bot
 ```
 
-### 3. Fetch Historical Data
+**Replay Mode (paper trading):**
 
 ```bash
-python -m services.trading.fetch_session 2025-01-15
-# Saves to data/raw/replay_2025-01-15.csv
+REPLAY_FILE=data/trading/replay/replay_2025-01-02.csv python -m services.trading.run_bot
 ```
 
-### 4. Run Tests
+**Fetch Session Data:**
+
+```bash
+# Saves to data/trading/replay/replay_YYYY-MM-DD.csv
+python -m services.trading.fetch_session 2025-01-15
+```
+
+## Services
+
+### Trading Bot
+
+The Opening Range strategy trades NSXUSD (NAS100) on OANDA:
+
+- **Session**: 09:30–12:00 New York time
+- **Opening Range**: 09:30–10:00 (first 30 minutes)
+- **Entry**: 10:22 based on price position in OR
+- **Exit**: SL/TP or hard exit at 12:00
+- **Posting**: Tweets trade entries/exits with charts
+
+### GovTrades (Coming Soon)
+
+Congressional stock trade monitoring via PTR filings:
+
+- Poll House/Senate disclosure websites
+- Parse PDF filings, extract trade data
+- Filter by insider-ness, materiality, timeliness
+- Post notable trades to Twitter with LLM context
+
+## Configuration
+
+### Environment Variables (`.env`)
+
+```bash
+# === Trading Service ===
+OANDA_ACCOUNT_ID=xxx-xxx-xxxxxxx-xxx
+OANDA_API_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+OANDA_ENV=practice  # practice | live
+OANDA_INSTRUMENT=NAS100_USD
+OANDA_TIMEZONE=America/New_York
+
+# === Twitter/X API (shared) ===
+TWITTER_CONSUMER_KEY=...
+TWITTER_CONSUMER_SECRET=...
+TWITTER_ACCESS_TOKEN=...
+TWITTER_ACCESS_SECRET=...
+TWITTER_BEARER_TOKEN=...
+
+# === Logging ===
+LOG_LEVEL=INFO
+```
+
+### Strategy Configuration
+
+| File                             | Purpose                                      |
+| -------------------------------- | -------------------------------------------- |
+| `config/trading/instruments.yml` | Market settings, session times, data format  |
+| `config/trading/strategy.yml`    | Entry zones, SL/TP, capital, execution rules |
+
+## Development
+
+### Run Tests
 
 ```bash
 pytest services/trading/test_logic.py -v
 ```
 
----
-
-## Strategy Summary
-
-**Session window (New York time):**
-
-- **Opening Range (OR):** 09:30–10:00 (first 30 minutes)
-- **Entry time:** 10:22
-- **Hard exit:** 12:00
-
-**Position logic:**
-
-- Compute OR High and OR Low from 09:30–10:00
-- At 10:22, check price position relative to OR:
-  - **Long** if price in top 35% of OR range
-  - **Short** if price in bottom 35%
-  - **No trade** if price in middle 30%
-- **Stop Loss:** 25 points | **Take Profit:** 75 points
-- **Point value:** $80/point
-
----
-
-## Configuration
-
-### config/instruments.yml
-
-Controls market details, session times, and data policies.
-
-### config/strategy.yml
-
-Controls signal logic (zones), risk (SL/TP), and execution rules.
-
-### Environment Variables (.env)
-
-| Variable                | Description                     |
-| ----------------------- | ------------------------------- |
-| `OANDA_ACCOUNT_ID`      | OANDA account ID                |
-| `OANDA_API_TOKEN`       | OANDA API token                 |
-| `OANDA_ENV`             | `practice` or `live`            |
-| `OANDA_INSTRUMENT`      | Instrument (e.g., `NAS100_USD`) |
-| `TWITTER_API_KEY`       | Twitter API key                 |
-| `TWITTER_API_SECRET`    | Twitter API secret              |
-| `TWITTER_ACCESS_TOKEN`  | Twitter access token            |
-| `TWITTER_ACCESS_SECRET` | Twitter access secret           |
-
----
-
-## Docker Deployment
-
-See [DEPLOYMENT.md](DEPLOYMENT.md) for full GCP deployment instructions.
+### Run Notebooks
 
 ```bash
-# Build
-docker build -t trading-bot .
-
-# Run trading bot
-docker run --env-file .env trading-bot
-
-# Run with volume mount for logs
-docker run --env-file .env -v $(pwd)/logs:/app/services/trading/logs trading-bot
+jupyter lab notebooks/trading/
 ```
 
----
-
-## Services
-
-### Trading Service (`services/trading/`)
-
-The Opening Range trading bot. Monitors OANDA for M1 candles, generates signals, and executes trades.
-
-### GovTrades Service (`services/govtrades/`) — Coming Soon
-
-Monitors US Congress PTR filings, extracts trades, and posts to Twitter.
-
----
-
-## Verification Commands
+### Docker Build
 
 ```bash
-# Verify OANDA connection
-python scripts/verify_account.py
-
-# List accessible accounts
-python scripts/list_accounts.py
+docker build -t openingrange .
+docker run --env-file .env openingrange
 ```
 
----
+## Folder Reference
 
-## Development
+| Folder                 | Purpose                                |
+| ---------------------- | -------------------------------------- |
+| `config/<service>/`    | YAML configuration per service         |
+| `data/<service>/`      | Data files (historical, replay, cache) |
+| `docs/<service>/`      | Technical documentation                |
+| `logs/<service>/`      | Runtime logs                           |
+| `notebooks/<service>/` | Jupyter notebooks for analysis         |
+| `reports/<service>/`   | Generated reports and figures          |
+| `scripts/<service>/`   | Utility scripts                        |
+| `services/<service>/`  | Service implementation code            |
+| `shared/`              | Cross-service utilities                |
 
-### Adding a New Service
+## Deployment
 
-1. Create directory: `services/your_service/`
-2. Add `__init__.py`, `config.py`, `main.py`
-3. Use `shared/logging_utils.py` for logging
-4. Use `shared/notifier.py` for Twitter posting
-5. Add config to `config/your_service.yml`
-6. Update Dockerfile CMD or add docker-compose service
-
-### Code Standards
-
-- Python 3.10+
-- Type hints required
-- Use dataclasses/TypedDict for schemas
-- Structured logging via `shared/logging_utils`
-- Tests in `test_*.py` files
-
----
+See [DEPLOYMENT.md](DEPLOYMENT.md) for GCP deployment instructions.
 
 ## License
 
-Private repository.
+Private - All rights reserved.

@@ -1,0 +1,6 @@
+file,sample_rows,columns_detected,datetime_format_ok,prices_numeric_ok,volume_numeric_ok,parse_ok,note
+DAT_ASCII_NSXUSD_M1_2020.csv,200,6,True,True,True,True,OK
+DAT_ASCII_NSXUSD_M1_2021.csv,200,6,True,True,True,True,OK
+DAT_ASCII_NSXUSD_M1_2022.csv,200,6,True,True,True,True,OK
+DAT_ASCII_NSXUSD_M1_2023.csv,200,6,True,True,True,True,OK
+DAT_ASCII_NSXUSD_M1_2024.csv,200,6,True,True,True,True,OK

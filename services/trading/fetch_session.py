@@ -1,7 +1,7 @@
 """Fetch a specific session window (NY time) of M1 candles and save to CSV.
 Usage:
   python -m services.trading.fetch_session 2025-01-02
-saves to data/raw/replay_2025-01-02.csv
+saves to data/trading/replay/replay_2025-01-02.csv
 """
 import sys
 from pathlib import Path
@@ -79,7 +79,7 @@ def main(date_str):
     if df.empty:
         print(f"No data returned for {date_str} between {start} and {end}. Check instrument/token/time window.")
         return
-    out = ROOT / "data" / "raw" / f"replay_{date_str}.csv"
+    out = ROOT / "data" / "trading" / "replay" / f"replay_{date_str}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out, index=False)
     print(f"Saved {len(df)} rows to {out}")

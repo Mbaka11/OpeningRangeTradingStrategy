@@ -19,9 +19,9 @@ from services.trading import data_feed, broker_oanda
 from services.trading import plotting
 from services.trading.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
 from services.trading.trade_types import DailyLog, SessionSetup, SignalDecision, TradeResult
+from services.trading import or_core
 from shared.logging_utils import setup_logger
 from shared import notifier
-from src import or_core
 
 NY = pytz.timezone(OANDA_TIMEZONE)
 logger = setup_logger("bot", log_dir=ROOT / "services" / "trading" / "logs")
