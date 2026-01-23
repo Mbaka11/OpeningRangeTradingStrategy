@@ -1,5 +1,6 @@
 from typing import TypedDict, List, Optional, Dict, Any
 
+
 class Candle(TypedDict):
     time_ny: str
     open: float
@@ -9,6 +10,7 @@ class Candle(TypedDict):
     volume: int
     complete: bool
 
+
 class StrategyParams(TypedDict):
     entry_time: str
     exit_time: str
@@ -17,9 +19,11 @@ class StrategyParams(TypedDict):
     sl_points: float
     tp_points: float
 
+
 class EntryBounds(TypedDict):
     top_cut: float
     bottom_cut: float
+
 
 class SessionSetup(TypedDict):
     date: str
@@ -31,6 +35,7 @@ class SessionSetup(TypedDict):
     or_completeness: str
     or_candles: List[Candle]
 
+
 class SignalDecision(TypedDict):
     signal_type: str
     signal_reason: str
@@ -38,10 +43,12 @@ class SignalDecision(TypedDict):
     entry_bounds: EntryBounds
     timestamp: str
 
+
 class PreTradeChecks(TypedDict):
     spread: float
     volatility_atr_14: float
     timestamp: str
+
 
 class TradeResult(TypedDict):
     side: str
@@ -51,6 +58,7 @@ class TradeResult(TypedDict):
     mfe_points: float
     mae_points: float
     trade_path_candles: List[Candle]
+
 
 class DailyLog(TypedDict):
     session_setup: SessionSetup

@@ -9,17 +9,22 @@ from datetime import datetime, timedelta
 import pytz
 import pandas as pd
 from pathlib import Path
-ROOT = Path(__file__).resolve().parent.parent
+from typing import Optional
+
+ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from live import data_feed, broker_oanda
-from live import notifier, plotting
-from live.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
-from live.logging_utils import setup_logger
+
+from services.trading import data_feed, broker_oanda
+from services.trading import plotting
+from services.trading.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
+from services.trading.trade_types import DailyLog, SessionSetup, SignalDecision, TradeResult
+from shared.logging_utils import setup_logger
+from shared import notifier
 from src import or_core
-from live.trade_types import DailyLog, SessionSetup, SignalDecision, TradeResult
+
 NY = pytz.timezone(OANDA_TIMEZONE)
-logger = setup_logger("bot")
+logger = setup_logger("bot", log_dir=ROOT / "services" / "trading" / "logs")
 PLACE_ORDERS = True  # toggle to True when ready
 POSITION_SIZE = INSTRUMENTS.get("market", {}).get("position_size", 1.0)
 POINT_VAL = INSTRUMENTS.get("market", {}).get("point_value_usd", 80.0)
@@ -50,6 +55,7 @@ class DateTimeEncoder(json.JSONEncoder):
             return obj.to_dict(orient="records")
         return super().default(obj)
 
+
 def now_ny():
     return datetime.now(tz=NY)
 
@@ -68,7 +74,8 @@ def format_session_overview() -> str:
 
 def compute_signal(win_df: pd.DataFrame, or_df: pd.DataFrame):
     # replicate or_core decision using latest dataframes
-    or_high = or_df["high"].max(); or_low = or_df["low"].min()
+    or_high = or_df["high"].max()
+    or_low = or_df["low"].min()
     or_rng = or_high - or_low
     bottom_cut = or_low + BOT_PCT * or_rng
     top_cut    = or_high - TOP_PCT * or_rng
@@ -100,22 +107,28 @@ def simulate_exit(win_df: pd.DataFrame, side: str, entry: float, sl: float, tp: 
             touched_tp = hi >= tp
             touched_sl = lo <= sl
             if touched_tp and touched_sl:
-                exit_ts, exit_px, exit_reason = ts, sl, "sl"; break
+                exit_ts, exit_px, exit_reason = ts, sl, "sl"
+                break
             elif touched_sl:
-                exit_ts, exit_px, exit_reason = ts, sl, "sl"; break
+                exit_ts, exit_px, exit_reason = ts, sl, "sl"
+                break
             elif touched_tp:
-                exit_ts, exit_px, exit_reason = ts, tp, "tp"; break
+                exit_ts, exit_px, exit_reason = ts, tp, "tp"
+                break
     elif side == "short":
         for ts, row in path.iterrows():
             hi, lo = float(row["high"]), float(row["low"])
             touched_tp = lo <= tp
             touched_sl = hi >= sl
             if touched_tp and touched_sl:
-                exit_ts, exit_px, exit_reason = ts, sl, "sl"; break
+                exit_ts, exit_px, exit_reason = ts, sl, "sl"
+                break
             elif touched_sl:
-                exit_ts, exit_px, exit_reason = ts, sl, "sl"; break
+                exit_ts, exit_px, exit_reason = ts, sl, "sl"
+                break
             elif touched_tp:
-                exit_ts, exit_px, exit_reason = ts, tp, "tp"; break
+                exit_ts, exit_px, exit_reason = ts, tp, "tp"
+                break
 
     if exit_ts is None:
         if not path.empty:
@@ -182,6 +195,7 @@ def check_or_completeness(slice_or, or_expected_rows, trade_date, or_start, or_e
             return log_msg, None, False  # Skip = False
     return None, None, False  # No missing rows, don't skip
 
+
 def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
     """Calculates the Average True Range (ATR) for the given DataFrame."""
     if len(df) < period + 1:
@@ -194,6 +208,7 @@ def calculate_atr(df: pd.DataFrame, period: int = 14) -> float:
     tr3 = (low - close.shift()).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.rolling(period).mean().iloc[-1]
+
 
 def main_loop():
     last_trade_date = None
@@ -230,12 +245,14 @@ def main_loop():
         notifier.notify_trade(f"Bot ready: {overview}")
     except Exception:
         logger.exception("Notifier error while posting pre-open status")
+    
     while True:
         try:
             fetch_latency_ms = None
             ny_now = now_ny()
             if ny_now.weekday() >= 5:  # skip weekends
-                time.sleep(60); continue
+                time.sleep(60)
+                continue
 
             in_session_window = OR_START_T <= ny_now.time() <= EXIT_T_T
             if in_session_window and session_announced_for != ny_now.date():
@@ -268,14 +285,16 @@ def main_loop():
             slice_or  = data_feed.latest_slice(df, OR_START, OR_END)
 
             # ensure indexes are time-aware for selection
-            slice_win = slice_win.copy(); slice_or = slice_or.copy()
+            slice_win = slice_win.copy()
+            slice_or = slice_or.copy()
             slice_win.index = pd.to_datetime(slice_win["time_ny"])
             slice_or.index  = pd.to_datetime(slice_or["time_ny"])
 
             trade_date = ny_now.date()
             if trade_date in skipped_days or trade_date in handled_days:
                 # Already decided to skip/handle this trade day; keep heartbeats only.
-                time.sleep(60); continue
+                time.sleep(60)
+                continue
 
             # Heartbeat cadence: 10m during session window, hourly otherwise
             hb_interval = timedelta(minutes=10) if in_session_window else timedelta(hours=1)
@@ -301,7 +320,8 @@ def main_loop():
             entry_wait_dt = NY.localize(datetime.combine(trade_date, ENTRY_T_T)) + timedelta(minutes=1)
             
             if last_trade_date == trade_date:
-                time.sleep(30); continue
+                time.sleep(30)
+                continue
 
             # Safety: Don't enter trades if the session is already over (e.g. late start)
             if ny_now.time() >= EXIT_T_T:
@@ -339,7 +359,8 @@ def main_loop():
                         logger.exception("Notifier error while posting skip day alert")
                     handled_days.add(trade_date)
                     last_trade_date = trade_date
-                time.sleep(60); continue
+                time.sleep(60)
+                continue
 
             if ny_now.time() >= EXIT_T_T and not has_exit:
                 if trade_date not in skipped_days:
@@ -353,7 +374,8 @@ def main_loop():
                         logger.exception("Notifier error while posting skip day alert")
                     handled_days.add(trade_date)
                     last_trade_date = trade_date
-                time.sleep(60); continue
+                time.sleep(60)
+                continue
 
             # OR completeness / zero-range guard
             if ny_now.time() >= OR_END_T:
@@ -371,11 +393,11 @@ def main_loop():
 
                         if len(slice_or) == or_expected_rows:
                             or_slice_is_complete = True
-                            if i > 0: # Log only if it wasn't complete on the first try
+                            if i > 0:  # Log only if it wasn't complete on the first try
                                 logger.info(f"OR data is complete on attempt {i+1}.")
                             break
                         else:
-                            if i < 2: # Don't log retry message on the last attempt
+                            if i < 2:  # Don't log retry message on the last attempt
                                 logger.warning(
                                     f"OR data incomplete on attempt {i+1} "
                                     f"({len(slice_or)}/{or_expected_rows} rows). Retrying in 15s."
@@ -418,7 +440,8 @@ def main_loop():
                             logger.exception("Notifier error while posting skip day alert")
                         handled_days.add(trade_date)
                         last_trade_date = trade_date
-                    time.sleep(60); continue
+                    time.sleep(60)
+                    continue
                 
                 # OR is valid; announce levels if not yet done
                 if trade_date not in skipped_days and or_announced_for != trade_date:
@@ -462,12 +485,13 @@ def main_loop():
                     or_announced_for = trade_date
 
             if ny_now < entry_wait_dt:
-                time.sleep(10); continue
+                time.sleep(10)
+                continue
 
             # PRE-TRADE CHECKS: Log Volatility & Spread before decision
             if "pre_trade_checks" not in daily_details:
                 current_spread = 0.0
-                if PLACE_ORDERS: # Only fetch live spread if we are actually trading/connected
+                if PLACE_ORDERS:  # Only fetch live spread if we are actually trading/connected
                     current_spread = broker_oanda.get_current_spread()
                 
                 current_atr = calculate_atr(df, period=14)
@@ -506,7 +530,10 @@ def main_loop():
                 "signal_type": side,
                 "signal_reason": "strategy_signal",
                 "entry_price": entry,
-                "entry_bounds": {"top_cut": daily_details["session_setup"]["or_high"] - TOP_PCT * or_rng_log, "bottom_cut": daily_details["session_setup"]["or_low"] + BOT_PCT * or_rng_log},
+                "entry_bounds": {
+                    "top_cut": daily_details["session_setup"]["or_high"] - TOP_PCT * or_rng_log,
+                    "bottom_cut": daily_details["session_setup"]["or_low"] + BOT_PCT * or_rng_log
+                },
                 "timestamp": str(ny_now)
             }
             summary["last_signal"] = f"{trade_date} {side} {entry:.2f}"
@@ -641,7 +668,7 @@ def main_loop():
                         # ARCHIVE: Save Trade Result & Path
                         daily_details["trade_result"] = {
                             "side": side,
-                            "pnl_points": 0.0, "pnl_usd": 0.0, # Placeholder, updated at session end if possible
+                            "pnl_points": 0.0, "pnl_usd": 0.0,  # Placeholder, updated at session end if possible
                             "exit_reason": exit_reason or "unknown",
                             "mfe_points": mfe, "mae_points": mae,
                             "trade_path_candles": df_trade.to_dict(orient="records")
@@ -684,7 +711,7 @@ def main_loop():
                         notifier.notify_trade(full_msg, image_buffer=img_buf)
                 except Exception:
                     logger.exception("Notifier error while posting exit/stats")
-            else: # If not placing orders, just wait until exit time as before
+            else:  # If not placing orders, just wait until exit time as before
                 while now_ny().time() < EXIT_T_T:
                     time.sleep(30)
 
@@ -699,10 +726,10 @@ def main_loop():
             if after_exit and last_trade_date and summary_flushed_for != last_trade_date and session_started_for == last_trade_date:
                 fname = summary_path / f"{last_trade_date}_summary.log"
                 end_snapshot = None
+                pnl_nav = None
+                pnl_bal = None
                 try:
                     end_snapshot = broker_oanda.get_account_summary()
-                    pnl_nav = None
-                    pnl_bal = None
                     if start_account_snapshot:
                         pnl_nav = end_snapshot["nav"] - start_account_snapshot.get("nav", 0.0)
                         pnl_bal = end_snapshot["balance"] - start_account_snapshot.get("balance", 0.0)
@@ -766,10 +793,10 @@ def main_loop():
                     
                     # Update PnL in trade_result if available from session summary
                     if "trade_result" in daily_details and pnl_bal is not None:
-                         daily_details["trade_result"]["pnl_usd"] = pnl_bal
-                         # Estimate points from USD PnL
-                         if POINT_VAL > 0 and POSITION_SIZE > 0:
-                             daily_details["trade_result"]["pnl_points"] = pnl_bal / (POINT_VAL * POSITION_SIZE)
+                        daily_details["trade_result"]["pnl_usd"] = pnl_bal
+                        # Estimate points from USD PnL
+                        if POINT_VAL > 0 and POSITION_SIZE > 0:
+                            daily_details["trade_result"]["pnl_points"] = pnl_bal / (POINT_VAL * POSITION_SIZE)
 
                     with open(json_path, "w") as f:
                         json.dump(daily_details, f, cls=DateTimeEncoder, indent=2)
@@ -814,9 +841,9 @@ if __name__ == "__main__":
         # Extract date for report/chart
         r_date = datetime.now().date()
         try:
-             r_date = pd.to_datetime(Path(REPLAY_FILE).stem.replace("replay_", "")).date()
+            r_date = pd.to_datetime(Path(REPLAY_FILE).stem.replace("replay_", "")).date()
         except Exception:
-             pass
+            pass
 
         # 1. Session Info
         overview = format_session_overview()
@@ -919,8 +946,10 @@ if __name__ == "__main__":
 
             try:
                 charts = []
-                if or_chart_buf: charts.append(or_chart_buf)
-                if img_buf: charts.append(img_buf)
+                if or_chart_buf:
+                    charts.append(or_chart_buf)
+                if img_buf:
+                    charts.append(img_buf)
 
                 res = notifier.notify_trade(tweet_msg, images=charts)
                 if res and res.get("status") == "posted":

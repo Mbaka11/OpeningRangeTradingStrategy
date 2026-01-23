@@ -1,6 +1,6 @@
 """Fetch a specific session window (NY time) of M1 candles and save to CSV.
 Usage:
-  python fetch_session.py 2025-01-02
+  python -m services.trading.fetch_session 2025-01-02
 saves to data/raw/replay_2025-01-02.csv
 """
 import sys
@@ -11,11 +11,11 @@ import pandas as pd
 import requests
 
 # Ensure repo root on path
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from live.config import OANDA_API_BASE, OANDA_API_TOKEN, OANDA_INSTRUMENT, OANDA_TIMEZONE
+from services.trading.config import OANDA_API_BASE, OANDA_API_TOKEN, OANDA_INSTRUMENT, OANDA_TIMEZONE
 
 NY = pytz.timezone(OANDA_TIMEZONE)
 
@@ -79,15 +79,16 @@ def main(date_str):
     if df.empty:
         print(f"No data returned for {date_str} between {start} and {end}. Check instrument/token/time window.")
         return
-    out = f"data/raw/replay_{date_str}.csv"
-    Path(out).parent.mkdir(parents=True, exist_ok=True)
+    out = ROOT / "data" / "raw" / f"replay_{date_str}.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(out, index=False)
     print(f"Saved {len(df)} rows to {out}")
     print(df.head())
     print(df.tail())
 
+
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python fetch_session.py YYYY-MM-DD")
+        print("Usage: python -m services.trading.fetch_session YYYY-MM-DD")
         sys.exit(1)
     main(sys.argv[1])

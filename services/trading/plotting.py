@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import pandas as pd
 
+
 def create_trade_chart(df, trade_date, entry_time, exit_time, 
                        entry_price, exit_price, side, 
                        or_high, or_low, sl, tp, mfe, mae,
@@ -21,7 +22,7 @@ def create_trade_chart(df, trade_date, entry_time, exit_time,
     try:
         plt.style.use('seaborn-v0_8-whitegrid')
     except OSError:
-        pass # Fallback if style not found
+        pass  # Fallback if style not found
 
     fig, ax = plt.subplots(figsize=(10, 6))
     
@@ -47,11 +48,13 @@ def create_trade_chart(df, trade_date, entry_time, exit_time,
         # Entry Marker
         # Find closest timestamp for entry
         entry_ts = pd.Timestamp.combine(trade_date, entry_time).tz_localize(df.index.tz)
-        ax.scatter([entry_ts], [entry_price], color=c_entry, marker="^" if side=="long" else "v", s=120, zorder=5, edgecolors='white')
+        ax.scatter([entry_ts], [entry_price], color=c_entry, marker="^" if side == "long" else "v", s=120, zorder=5, edgecolors='white')
 
     # SL / TP Lines
-    if sl: ax.axhline(sl, color=c_sl, linestyle=":", alpha=0.8, label="SL", linewidth=1.5)
-    if tp: ax.axhline(tp, color=c_tp, linestyle=":", alpha=0.8, label="TP", linewidth=1.5)
+    if sl:
+        ax.axhline(sl, color=c_sl, linestyle=":", alpha=0.8, label="SL", linewidth=1.5)
+    if tp:
+        ax.axhline(tp, color=c_tp, linestyle=":", alpha=0.8, label="TP", linewidth=1.5)
 
     # Exit Marker
     exit_label = "Exit"
@@ -79,6 +82,7 @@ def create_trade_chart(df, trade_date, entry_time, exit_time,
     plt.close(fig)
     
     return buf
+
 
 def create_or_chart(df, trade_date, or_high, or_low, top_cut, bot_cut):
     """

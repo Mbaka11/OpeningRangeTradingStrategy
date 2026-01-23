@@ -1,7 +1,7 @@
 """Thin OANDA order wrapper (practice/live toggle via config)."""
 import requests
-from live.config import OANDA_API_BASE, OANDA_API_TOKEN, OANDA_ACCOUNT_ID, OANDA_INSTRUMENT
-from live.logging_utils import setup_logger
+from services.trading.config import OANDA_API_BASE, OANDA_API_TOKEN, OANDA_ACCOUNT_ID, OANDA_INSTRUMENT
+from shared.logging_utils import setup_logger
 
 logger = setup_logger("broker")
 
@@ -108,6 +108,7 @@ def get_accounts():
     resp = requests.get(url, headers=_headers(), timeout=10)
     resp.raise_for_status()
     return resp.json()
+
 
 def get_current_spread() -> float:
     """Fetch current spread (Ask - Bid) for the configured instrument."""

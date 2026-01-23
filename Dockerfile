@@ -22,5 +22,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the application code
 COPY . .
 
-# Run the bot
-CMD ["python", "live/run_bot.py"]
+# Create logs directory
+RUN mkdir -p /app/logs /app/services/trading/logs
+
+# Default entrypoint - can be overridden with docker run command
+# Usage:
+#   Trading bot:    docker run <image>
+#   GovTrades:      docker run <image> python -m services.govtrades.main
+CMD ["python", "-m", "services.trading.run_bot"]

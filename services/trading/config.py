@@ -1,3 +1,7 @@
+"""
+Configuration loader for the trading service.
+Loads YAML configs and environment variables.
+"""
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -6,7 +10,7 @@ import yaml
 # Load .env if present
 load_dotenv()
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent.parent
 CONFIG_DIR = ROOT / "config"
 
 

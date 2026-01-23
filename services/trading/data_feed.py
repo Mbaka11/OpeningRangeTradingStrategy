@@ -8,8 +8,8 @@ import requests
 import pandas as pd
 import pytz
 
-from live.config import OANDA_API_BASE, OANDA_API_TOKEN, OANDA_INSTRUMENT, OANDA_TIMEZONE
-from live.logging_utils import setup_logger
+from services.trading.config import OANDA_API_BASE, OANDA_API_TOKEN, OANDA_INSTRUMENT, OANDA_TIMEZONE
+from shared.logging_utils import setup_logger
 
 NY = pytz.timezone(OANDA_TIMEZONE)
 logger = setup_logger("data_feed")
