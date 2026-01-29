@@ -169,7 +169,7 @@ def main():
     # Construct Tweet Message
     # Keeping it concise for Twitter limits
     msg = (
-        f"📊 Performance Update\n\n"
+        f"Performance Update\n\n"
         f"Trades: {total_trades} (over {total_days} sessions)\n"
         f"Net PnL: ${total_pnl:,.2f}\n"
         f"Win Rate: {win_rate:.1f}%\n"

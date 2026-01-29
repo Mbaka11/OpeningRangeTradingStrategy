@@ -256,7 +256,7 @@ def main_loop():
         services_status = format_services_status()
         logger.info(f"STARTUP {overview}")
         logger.info(f"SERVICES\n{services_status}")
-        startup_msg = f"{services_status}\n\n🤖 Trading Bot ready:\n{overview}"
+        startup_msg = f"{services_status}\n\nTrading Bot ready:\n{overview}"
         notifier.notify_trade(startup_msg)
     except Exception:
         logger.exception("Notifier error while posting pre-open status")
