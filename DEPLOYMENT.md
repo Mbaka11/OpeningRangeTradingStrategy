@@ -1,134 +1,145 @@
-# Google Cloud Deployment Guide
+# Deployment Guide
 
-This project runs on a Google Compute Engine VM (`openingrange-bot`) using Docker. The deployment workflow involves building the image in Cloud Shell and then pulling/restarting it on the VM.
+---
 
-## 1. One-Time Setup (Configuration)
+# 🆕 FIRST TIME SETUP
 
-_Do this only if you created a new VM or need to change your API keys._
+_Only do this once when setting up a new VM._
 
-1. **SSH into the VM:**
+## Step 1: Build Image (Cloud Shell)
+
+```bash
+cd OpeningRangeTradingStrategy
+gcloud builds submit --tag gcr.io/onyx-seeker-479417-d5/my-bot-image .
+```
+
+## Step 2: SSH into VM
 
 ```bash
 gcloud compute ssh openingrange-bot --zone us-central1-a
-
 ```
 
-2. **Create/Update the `.env` file:**
-   _This file stays on the server and is not in the git repo._
+## Step 3: Create `.env` file
 
 ```bash
-export TERM=xterm   # Fixes the "Error opening terminal" issue
+export TERM=xterm
 nano .env
-
 ```
 
-3. **Paste your configuration:**
+Paste this template:
 
 ```env
+# Trading
 OANDA_ACCOUNT_ID=101-001-YOUR-ID
-OANDA_API_TOKEN=your_oanda_token
+OANDA_API_TOKEN=your_token
 OANDA_ENV=practice
 OANDA_INSTRUMENT=NAS100_USD
 OANDA_TIMEZONE=America/New_York
 
+# Twitter
+TWITTER_API_KEY=xxx
+TWITTER_API_SECRET=xxx
+TWITTER_ACCESS_TOKEN=xxx
+TWITTER_ACCESS_SECRET=xxx
+
+# Logging
+LOG_LEVEL=INFO
 ```
 
-_(Press `Ctrl+O` to Save, `Ctrl+X` to Exit)_
+Save: `Ctrl+O`, Exit: `Ctrl+X`
 
----
-
-## 2. Routine Deployment Cycle
-
-_Follow these steps every time you modify the code._
-
-### Phase A: Build & Push (In Cloud Shell)
-
-1. Navigate to your project folder:
+## Step 4: Authenticate Docker
 
 ```bash
-cd OpeningRangeTradingStrategy
-
-```
-
-2. Build and upload the new Docker image:
-
-```bash
-gcloud builds submit --tag gcr.io/onyx-seeker-479417-d5/my-bot-image .
-
-```
-
-### Phase B: Update the Bot (In the VM)
-
-1. **SSH into the VM:**
-
-```bash
-gcloud compute ssh openingrange-bot --zone us-central1-a
-
-```
-
-2. **Authenticate Docker:**
-   _Required because the VM runs Container-Optimized OS with read-only root._
-
-```bash
-# 1. Generate Auth Token
-TOKEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | grep -o '"access_token":"[^" ]*"' | cut -d'"' -f4)
-
-# 2. Create Temp Config Folder
+TOKEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
 mkdir -p $(pwd)/.docker-temp
-
-# 3. Login
 sudo docker --config $(pwd)/.docker-temp login -u oauth2accesstoken -p "$TOKEN" https://gcr.io
-
 ```
 
-3. **Pull the Latest Image:**
+## Step 5: Pull & Run
 
 ```bash
+# Pull image
 sudo docker --config $(pwd)/.docker-temp pull gcr.io/onyx-seeker-479417-d5/my-bot-image:latest
 
-```
+# Create logs folder
+mkdir -p $(pwd)/logs/trading
 
-4. **Restart the Container:**
-
-```bash
-# 1. Find the running container ID
-sudo docker ps
-
-# 2. Stop and Remove the old container (Replace <ID> with actual ID)
-sudo docker stop <ID>
-sudo docker rm <ID>
-
-# 3. Create logs directory (to persist data across updates)
-mkdir -p $(pwd)/logs
-
-# 4. Start the new version (Linking .env and mounting logs)
+# Start container
 sudo docker run -d \
   --name trading-bot \
   --restart always \
   --env-file .env \
-  -v $(pwd)/logs:/app/live/logs \
+  -v $(pwd)/logs/trading:/app/logs/trading \
   gcr.io/onyx-seeker-479417-d5/my-bot-image:latest
 
+# Verify it's running
+sudo docker logs -f trading-bot
 ```
 
 ---
 
-## 3. Monitoring & Logs
+# 🔄 UPDATING (Routine Deploy)
 
-To check if the bot is running correctly:
+_Do this every time you push code changes._
 
-- **View live logs:**
+## Step 1: Build New Image (Cloud Shell)
 
 ```bash
+cd OpeningRangeTradingStrategy
+gcloud builds submit --tag gcr.io/onyx-seeker-479417-d5/my-bot-image .
+```
+
+## Step 2: Update on VM
+
+```bash
+# SSH into VM
+gcloud compute ssh openingrange-bot --zone us-central1-a
+
+# Authenticate Docker
+TOKEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4)
+mkdir -p $(pwd)/.docker-temp
+sudo docker --config $(pwd)/.docker-temp login -u oauth2accesstoken -p "$TOKEN" https://gcr.io
+
+# Pull latest image
+sudo docker --config $(pwd)/.docker-temp pull gcr.io/onyx-seeker-479417-d5/my-bot-image:latest
+
+# Stop & remove old container
+sudo docker stop trading-bot
+sudo docker rm trading-bot
+
+# Start new container
+sudo docker run -d \
+  --name trading-bot \
+  --restart always \
+  --env-file .env \
+  -v $(pwd)/logs/trading:/app/logs/trading \
+  gcr.io/onyx-seeker-479417-d5/my-bot-image:latest
+
+# Verify it's running
 sudo docker logs -f trading-bot
-
 ```
 
-_(Press `Ctrl+C` to exit)_
+---
 
-- **Check status:**
+# 📋 Reference
 
-```bash
-sudo docker ps
+## Common Commands
 
-```
+| Action               | Command                                      |
+| -------------------- | -------------------------------------------- |
+| View logs            | `sudo docker logs -f trading-bot`            |
+| Stop bot             | `sudo docker stop trading-bot`               |
+| Start bot            | `sudo docker start trading-bot`              |
+| Restart bot          | `sudo docker restart trading-bot`            |
+| Check status         | `sudo docker ps`                             |
+| Shell into container | `sudo docker exec -it trading-bot /bin/bash` |
+
+## Troubleshooting
+
+| Issue                       | Fix                                       |
+| --------------------------- | ----------------------------------------- |
+| Container exits immediately | `sudo docker logs trading-bot`            |
+| Twitter 403                 | Check API permissions in Developer Portal |
+| OANDA error                 | Verify `.env` credentials                 |
+| Module not found            | Rebuild image: `gcloud builds submit ...` |

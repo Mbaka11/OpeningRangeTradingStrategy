@@ -1,0 +1,6 @@
+file,rows_total,parse_fail_pct,tz_mode,start_local,end_local,is_monotonic,duplicate_timestamps,naive_detected,note
+DAT_ASCII_NSXUSD_M1_2020.csv,340022,0.0,assume_NY→America/New_York,2020-01-01 18:00:00-05:00,2020-12-31 16:13:00-05:00,False,60,True,OK
+DAT_ASCII_NSXUSD_M1_2021.csv,343006,0.0,assume_NY→America/New_York,2021-01-03 18:00:00-05:00,2021-12-31 16:13:00-05:00,False,60,True,OK
+DAT_ASCII_NSXUSD_M1_2022.csv,342771,0.0,assume_NY→America/New_York,2022-01-02 18:00:00-05:00,2022-12-30 16:12:00-05:00,False,60,True,OK
+DAT_ASCII_NSXUSD_M1_2023.csv,299349,0.0,assume_NY→America/New_York,2023-01-02 18:00:00-05:00,2023-12-29 16:12:00-05:00,False,60,True,OK
+DAT_ASCII_NSXUSD_M1_2024.csv,340986,0.0,assume_NY→America/New_York,2024-01-01 18:00:00-05:00,2024-12-31 16:12:00-05:00,False,60,True,OK

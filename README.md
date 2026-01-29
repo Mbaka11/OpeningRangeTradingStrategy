@@ -1,190 +1,219 @@
-# Opening Range Trading Strategy — NSXUSD (2020–2023)
+# OpeningRange
 
-> **Goal:** Present and rigorously test a simple Opening Range intraday strategy on NSXUSD (CFD/Index), with visuals that are understandable even for non-coders.
+A multi-service Python project running on GCP, featuring:
 
-## TL;DR (to be filled after first pass)
+- **Trading Bot** - Opening Range strategy on NSXUSD (NAS100)
+- **GovTrades** - (Coming Soon) Congressional PTR filing monitor
 
-- **Net performance (2020–2023):** _TBD_
-- **Max drawdown:** _TBD_
-- **Win rate:** _TBD_
-- **Sample equity curve & drawdown:** _TBD (figure)_
-- **Conclusion in one sentence:** _TBD_
-
----
-
-## 1) Strategy Summary (plain English)
-
-**Session window (market time):**
-
-- **Opening Range (OR) window:** 09:30–10:00 (first 30 minutes after regular open).
-- **Entry time:** **10:22** (exact minute; see open questions below).
-- **Hard exit (time):** 12:00 (close any open position at market).
-
-**Position logic (single trade per day):**
-
-- Compute **OR High** and **OR Low** from 09:30–10:00.
-- At the **entry time**, check where the price is relative to the OR:
-
-  - **Long** if price is in the **top 35%** of the OR range.
-  - **Short** if price is in the **bottom 35%**.
-  - **No trade** if price is in the middle 30%.
-
-- **Stops/Targets:**
-
-  - **Stop Loss:** fixed **25 points**.
-  - **Take Profit:** fixed **75 points**.
-  - **Value per point:** **\$80**.
-
-- **Forced exit:** Close any open trade at **12:00**.
-
-**Capital:**
-
-- Start with **\$100,000**. Update daily P\&L into equity curve.
-
-**Configuration knobs (no code editing needed):**
-
-- `config/instruments.yml` controls **market details** (point value, tick size), **session times** (OR window, entry, hard exit), **data format** (delimiter, datetime format, timezone) and **data-quality policies** (skip days with gaps, zero range).
-- `config/strategy.yml` controls **signal logic** (top/bottom percentages), **risk** (stop/take-profit points), **execution assumptions** (one trade/day, fill rules), and **reporting metrics**. Open in any text editor; values are readable and documented inline.
-
-> **Note:** We will finalize exact execution assumptions (use of OHLC for fills, slippage, fees, partial fills, tick size, timezone) before running the baseline.
-
----
-
-## 2) Data Requirements
-
-**Expected columns (semicolon “;” delimited, no header):**
+## Project Structure
 
 ```
-datetime;open;high;low;close;volume
+OpeningRange/
+├── config/                          # Configuration files
+│   ├── trading/                        # Trading service configs
+│   │   ├── instruments.yml               # Market/session settings
+│   │   └── strategy.yml                  # Strategy parameters
+│   └── govtrades/                      # GovTrades configs (future)
+│
+├── data/                            # Data files
+│   ├── trading/                        # Trading data
+│   │   ├── historical/                   # Backtest data (DAT_ASCII_*.csv)
+│   │   └── replay/                       # Paper trading replays
+│   └── govtrades/                      # GovTrades data (future)
+│
+├── docs/                            # Documentation
+│   ├── trading/                        # Trading strategy docs
+│   └── govtrades/                      # GovTrades specification
+│       └── GovTrades.md
+│
+├── logs/                            # Runtime logs
+│   ├── trading/                        # Trading bot logs
+│   └── govtrades/                      # GovTrades logs (future)
+│
+├── notebooks/                       # Jupyter notebooks
+│   ├── trading/                        # Strategy analysis notebooks
+│   │   ├── 01_spec_strategy.ipynb
+│   │   ├── 02_data_audit.ipynb
+│   │   ├── 03_baseline_backtest.ipynb
+│   │   ├── 04_parameter_robustness.ipynb
+│   │   ├── 05_performance_risk.ipynb
+│   │   └── 99_compare_replay_vs_backtest.ipynb
+│   └── govtrades/                      # GovTrades notebooks (future)
+│
+├── reports/                         # Generated reports
+│   ├── trading/                        # Trading reports
+│   │   ├── figures/                      # Charts (audit, backtest, risk)
+│   │   └── tables/                       # CSV exports
+│   └── govtrades/                      # GovTrades reports (future)
+│
+├── scripts/                         # Utility scripts
+│   ├── trading/                        # Trading utilities
+│   │   ├── verify_account.py
+│   │   ├── list_accounts.py
+│   │   └── analyze_json_logs.py
+│   └── govtrades/                      # GovTrades utilities (future)
+│
+├── services/                        # Service implementations
+│   ├── trading/                        # Opening Range trading bot
+│   │   ├── run_bot.py                    # Main entry point
+│   │   ├── or_core.py                    # Strategy logic
+│   │   ├── broker_oanda.py               # OANDA API wrapper
+│   │   ├── data_feed.py                  # M1 candle fetcher
+│   │   ├── plotting.py                   # Chart generation
+│   │   ├── config.py                     # Config loader
+│   │   ├── trade_types.py                # Data classes
+│   │   ├── fetch_session.py              # Session data fetcher
+│   │   └── test_logic.py                 # Unit tests
+│   └── govtrades/                      # GovTrades service (future)
+│
+├── shared/                          # Cross-service utilities
+│   ├── logging_utils.py                # TZ-aware rotating logger
+│   └── notifier.py                     # Twitter/X posting
+│
+├── Dockerfile                       # Container definition
+├── DEPLOYMENT.md                    # Deployment guide
+├── COPILOT_INSTRUCTIONS.md          # Development workflow
+├── requirements.txt                 # Python dependencies
+└── .env.example                     # Environment template
 ```
 
-**Assumptions to confirm:**
+## Quick Start
 
-- **Timezone of `datetime`:** currently treated as **America/New_York** (configurable via `source_timezone` if the CSV is in another tz).
-- **Resolution:** 1-minute bars.
-- **Session coverage:** Assume **regular session only**; pre/post is ignored. Set `has_premarket: true` if your data includes it.
-- **Point definition & tick size:** Point value set to **\$80**; tick size currently `null` (set the minimum price increment once known, e.g., 0.25).
-- **Holidays / half days:** Not encoded yet; half days will appear as missing minutes in QC.
+### 1. Environment Setup
 
-We will create a small **data contract** validator in the data-audit notebook (column types, monotonic timestamps, missing bars, duplicated bars, session boundaries).
+```bash
+# Clone and enter directory
+git clone <repo> && cd OpeningRange
 
-**Known quirks in the provided raw files:**
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-- Weekend gaps are expected (market closed). 2024 data is otherwise clean for intraday minutes. 2023 has extra intraday holes (missing 10:00-ish hours on some weekdays); consider backfilling before final stats.
+# Install dependencies
+pip install -r requirements.txt
 
----
-
-## 3) Evaluation Metrics
-
-- **Return:** Net P\&L, CAGR (if applicable), exposure/time-in-market.
-- **Risk:** Max Drawdown, Ulcer Index, volatility, tail metrics.
-- **Trade stats:** Win rate, Profit Factor, avg win/loss, expectancy.
-- **Stability:** Performance by year/month/day-of-week/time-of-day.
-- **Cost sensitivity:** Net vs. **fees + slippage** scenarios.
-- **Robustness:** Parameter sensitivity (OR window, SL/TP), walk-forward, Monte Carlo re-ordering of trades.
-
----
-
-## 4) Visuals (for non-coders)
-
-- **Equity curve** and **drawdown** (same time axis).
-- **Daily P\&L bars** with rolling stats.
-- **Heatmaps** by weekday × time bucket (hit-rate / P\&L).
-- **Distribution plots** (P\&L per trade, win/loss sizes).
-- **Sensitivity lines** (e.g., SL/TP multiples, OR window alternatives).
-- **Net vs. costs** curves.
-
-All plots will include intuitive titles, units, and short captions.
-
-**Reports folder structure (auto-created by notebooks):**
-
-- `reports/tables/audit/` — data checks (`valid_days.csv`, `exclusion_log.csv`, schema/tz reports).
-- `reports/tables/backtest/` — baseline backtest outputs (`backtest_daily*.csv`, summaries).
-- `reports/tables/robustness/` — parameter sweeps (entry time, zones, SL/TP).
-- `reports/tables/risk/` — performance/risk diagnostics (perf summary, MC reshuffle, regime stats).
-- Matching `reports/figures/{audit,backtest,robustness,risk}/` for saved charts.
-
----
-
-## Environment (for live/paper trading setup)
-
-Create a `.env` (ignored by Git) from `.env.example` and fill in your broker creds:
-
-```
+# Configure environment
 cp .env.example .env
+# Edit .env with your API keys
 ```
 
-Variables:
+### 2. Verify OANDA Connection
 
-- `OANDA_ACCOUNT_ID` — your OANDA account ID (use practice for paper).
-- `OANDA_API_TOKEN` — API token for the account. **(Note: If you create a new sub-account, you must regenerate this token in the OANDA Hub).**
-- `OANDA_ENV` — `practice` or `live` (start with `practice`).
-- `OANDA_INSTRUMENT` — instrument symbol (e.g., `NAS100_USD`).
-- `OANDA_TIMEZONE` — assumed local session timezone (default `America/New_York`).
-- Twitter posting (optional, via API v2): `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_SECRET`. **(Note: Free Tier is text-only. Ensure 'Read and Write' permissions are enabled in Developer Portal).**
+```bash
+python scripts/trading/verify_account.py
+```
 
-Keep the `.env` file out of version control; `.gitignore` already excludes it.
+### 3. Run Trading Bot
 
-### Suggested repo layout for live/paper bot
+**Live Mode:**
 
-- `notebooks/` — research (keep as-is).
-- `src/` — core strategy logic (reused by live runner).
-- `config/` — YAML configs + `.env` for secrets (not committed).
-- `live/` (new) — bot code:
-  - `live/run_bot.py` — main loop (ingest prices, decide at 10:22, manage orders/flat at 12:00).
-  - `live/broker_oanda.py` — thin OANDA client (paper/live toggle).
-  - `live/data_feed.py` — OANDA candle/tick polling, UTC→NY conversion, minute bar assembly.
-  - `live/logs/` — runtime logs; `live/state/` — checkpoints (e.g., last trade date).
-- `scripts/` — helper scripts:
-  - `verify_account.py` — check connection, currency, and margin availability.
-  - `list_accounts.py` — list all accounts accessible by the current token.
-  - `analyze_json_logs.py` — generates performance metrics and charts from daily JSON logs.
-  - `run_analysis_cron.sh` — wrapper for scheduled analysis.
+```bash
+python -m services.trading.run_bot
+```
 
-### Quick replay workflow (fetch a day and simulate)
+**Replay Mode (paper trading):**
 
-1. Fetch a session day (NY 09:00–13:00) to CSV (example for 2025-11-27):
-   - Linux/macOS/WSL: `python live/fetch_session.py 2025-11-27`
-   - PowerShell (Windows): `python live/fetch_session.py 2025-11-27`
-     Output: `data/raw/replay_2025-11-27.csv`
-2. Run the bot in replay mode against that file (no live calls):
-   - **Basic Replay (Logs only):**
-     - PowerShell: `$env:REPLAY_FILE="data/raw/replay_2025-11-24.csv"; python live/run_bot.py`
-     - Linux/macOS: `REPLAY_FILE=data/raw/replay_2025-11-24.csv python live/run_bot.py`
-   - **Full Replay (Logs + Tweet + Chart):**
-     - PowerShell: `$env:REPLAY_TWEETS="true"; $env:REPLAY_FILE="data/raw/replay_2025-11-24.csv"; python live/run_bot.py`
-     - Linux/macOS: `REPLAY_TWEETS=true REPLAY_FILE=data/raw/replay_2025-11-24.csv python live/run_bot.py`
-       _Generates a consolidated report with OR levels, trade signal, PnL, MFE/MAE stats, and attaches a chart image._
+```bash
+REPLAY_FILE=data/trading/replay/replay_2025-01-02.csv python -m services.trading.run_bot
+```
 
-### Docker & Verification Commands
+**Fetch Session Data:**
 
-Once the bot is running in Docker (see `DEPLOYMENT.md`), use these commands to verify health and connectivity:
+```bash
+# Saves to data/trading/replay/replay_YYYY-MM-DD.csv
+python -m services.trading.fetch_session 2025-01-15
+```
 
-- **Verify Account & Margin:**
+## Services
 
-  ```bash
-  sudo docker exec trading-bot python scripts/verify_account.py
-  ```
+### Trading Bot
 
-  _Checks connection to OANDA, confirms USD currency, and verifies sufficient margin (~$105k) for the strategy._
+The Opening Range strategy trades NSXUSD (NAS100) on OANDA:
 
-- **List Available Accounts:**
+- **Session**: 09:30–12:00 New York time
+- **Opening Range**: 09:30–10:00 (first 30 minutes)
+- **Entry**: 10:22 based on price position in OR
+- **Exit**: SL/TP or hard exit at 12:00
+- **Posting**: Tweets trade entries/exits with charts
 
-  ```bash
-  sudo docker exec trading-bot python scripts/list_accounts.py
-  ```
+### GovTrades (Coming Soon)
 
-  _Lists all sub-accounts your API token can access. Useful if you get 403 Forbidden errors._
+Congressional stock trade monitoring via PTR filings:
 
-- **Check Live Logs:**
-  ```bash
-  sudo docker logs -f trading-bot
-  ```
+- Poll House/Senate disclosure websites
+- Parse PDF filings, extract trade data
+- Filter by insider-ness, materiality, timeliness
+- Post notable trades to Twitter with LLM context
 
-### Deployment checklist (paper → live)
+## Configuration
 
-- Clock/timezone: sync NTP; convert OANDA UTC to NY; handle DST.
-- Symbol mapping: `NAS100_USD` (or broker equivalent), tick size, min stop distance.
-- Risk rails: one trade/day; skip if 10:22/12:00 missing or OR range ≤0; fail-safe flatten at 12:00; cap position size/daily loss.
-- Logging/alerts: log every bar/decision/order/fill; alert on errors/missed exits; keep a heartbeat.
-- Costs/size: use broker-accurate spread/fees in config; set fixed size or vol-based sizing if needed.
+### Environment Variables (`.env`)
+
+```bash
+# === Trading Service ===
+OANDA_ACCOUNT_ID=xxx-xxx-xxxxxxx-xxx
+OANDA_API_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+OANDA_ENV=practice  # practice | live
+OANDA_INSTRUMENT=NAS100_USD
+OANDA_TIMEZONE=America/New_York
+
+# === Twitter/X API (shared) ===
+TWITTER_CONSUMER_KEY=...
+TWITTER_CONSUMER_SECRET=...
+TWITTER_ACCESS_TOKEN=...
+TWITTER_ACCESS_SECRET=...
+TWITTER_BEARER_TOKEN=...
+
+# === Logging ===
+LOG_LEVEL=INFO
+```
+
+### Strategy Configuration
+
+| File                             | Purpose                                      |
+| -------------------------------- | -------------------------------------------- |
+| `config/trading/instruments.yml` | Market settings, session times, data format  |
+| `config/trading/strategy.yml`    | Entry zones, SL/TP, capital, execution rules |
+
+## Development
+
+### Run Tests
+
+```bash
+pytest services/trading/test_logic.py -v
+```
+
+### Run Notebooks
+
+```bash
+jupyter lab notebooks/trading/
+```
+
+### Docker Build
+
+```bash
+docker build -t openingrange .
+docker run --env-file .env openingrange
+```
+
+## Folder Reference
+
+| Folder                 | Purpose                                |
+| ---------------------- | -------------------------------------- |
+| `config/<service>/`    | YAML configuration per service         |
+| `data/<service>/`      | Data files (historical, replay, cache) |
+| `docs/<service>/`      | Technical documentation                |
+| `logs/<service>/`      | Runtime logs                           |
+| `notebooks/<service>/` | Jupyter notebooks for analysis         |
+| `reports/<service>/`   | Generated reports and figures          |
+| `scripts/<service>/`   | Utility scripts                        |
+| `services/<service>/`  | Service implementation code            |
+| `shared/`              | Cross-service utilities                |
+
+## Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for GCP deployment instructions.
+
+## License
+
+Private - All rights reserved.

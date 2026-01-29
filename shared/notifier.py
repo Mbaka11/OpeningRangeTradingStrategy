@@ -1,0 +1,126 @@
+"""
+Shared notifier for posting updates via Twitter/X API v2 (tweepy Client).
+Logs and skips if credentials are missing.
+Used by multiple services (trading bot, govtrades, etc.).
+"""
+import os
+import tweepy
+from dotenv import load_dotenv
+from shared.logging_utils import setup_logger
+
+load_dotenv()
+logger = setup_logger("notifier")
+
+# Twitter/X API credentials
+API_KEY = os.getenv("TWITTER_API_KEY", "")
+API_SECRET = os.getenv("TWITTER_API_SECRET", "")
+ACCESS_TOKEN = os.getenv("TWITTER_ACCESS_TOKEN", "")
+ACCESS_SECRET = os.getenv("TWITTER_ACCESS_SECRET", "")
+
+
+def can_post() -> bool:
+    """Check if Twitter credentials are configured."""
+    ok = all([API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_SECRET])
+    if not ok:
+        logger.info("Notifier: Twitter API creds missing; set TWITTER_* env vars.")
+    return ok
+
+
+def get_client() -> tweepy.Client:
+    """Get authenticated Twitter API v2 client."""
+    return tweepy.Client(
+        consumer_key=API_KEY,
+        consumer_secret=API_SECRET,
+        access_token=ACCESS_TOKEN,
+        access_token_secret=ACCESS_SECRET,
+    )
+
+
+def get_api_v1() -> tweepy.API:
+    """Get authenticated Twitter API v1.1 client (for media uploads)."""
+    auth = tweepy.OAuth1UserHandler(API_KEY, API_SECRET, ACCESS_TOKEN, ACCESS_SECRET)
+    return tweepy.API(auth)
+
+
+def notify_trade(message: str, image_buffer=None, images=None):
+    """
+    Post a tweet with optional images.
+    
+    Args:
+        message: Tweet text (max 280 chars)
+        image_buffer: Single image BytesIO buffer (legacy support)
+        images: List of image BytesIO buffers
+    
+    Returns:
+        dict with status and details
+    """
+    if not can_post():
+        logger.info(f"Notifier: would post (no creds): {message}")
+        return {"status": "skipped", "reason": "no_credentials"}
+    try:
+        client = get_client()
+        
+        media_ids = []
+        all_images = []
+        if image_buffer:
+            all_images.append(image_buffer)
+        if images:
+            all_images.extend(images)
+
+        if all_images:
+            # Use v1.1 API for media upload
+            api = get_api_v1()
+            for i, img in enumerate(all_images):
+                try:
+                    if hasattr(img, 'seek'):
+                        img.seek(0)
+                    media = api.media_upload(filename=f"chart_{i}.png", file=img)
+                    media_ids.append(media.media_id)
+                    logger.info(f"Notifier: Image {i} uploaded successfully")
+                except Exception as e:
+                    logger.warning(f"Notifier: Image {i} upload failed (likely Free Tier limit): {e}")
+
+        try:
+            resp = client.create_tweet(text=message, media_ids=media_ids if media_ids else None)
+            logger.info("Notifier: tweet posted via v2 client")
+            return {"status": "posted", "via": "api", "id": getattr(resp, 'data', {})}
+        except Exception as e:
+            # If media caused the 403 (common on Free Tier), retry text-only
+            if media_ids and "403" in str(e):
+                logger.warning(f"Notifier: Tweet with media failed (403). Retrying text-only...")
+                resp = client.create_tweet(text=message)
+                logger.info("Notifier: Text-only tweet posted successfully (fallback)")
+                return {"status": "posted", "via": "api_fallback", "id": getattr(resp, 'data', {})}
+            raise
+    except Exception as e:
+        logger.warning(f"Notifier: tweet failed: {e}")
+        if "403" in str(e):
+            logger.warning("Hint: 403 Forbidden often means missing Write permissions in Twitter Dev Portal or Free Tier limits.")
+            if len(message) > 280:
+                logger.warning(f"Hint: Message length is {len(message)} chars. Twitter limit is 280.")
+        return {"status": "error", "reason": str(e)}
+
+
+def post_tweet(message: str, media_ids: list = None) -> dict:
+    """
+    Lower-level tweet posting (no image handling).
+    
+    Args:
+        message: Tweet text
+        media_ids: Optional list of already-uploaded media IDs
+    
+    Returns:
+        dict with status and details
+    """
+    if not can_post():
+        logger.info(f"Notifier: would post (no creds): {message[:100]}...")
+        return {"status": "skipped", "reason": "no_credentials"}
+    
+    try:
+        client = get_client()
+        resp = client.create_tweet(text=message, media_ids=media_ids if media_ids else None)
+        logger.info("Notifier: tweet posted")
+        return {"status": "posted", "id": getattr(resp, 'data', {})}
+    except Exception as e:
+        logger.warning(f"Notifier: tweet failed: {e}")
+        return {"status": "error", "reason": str(e)}

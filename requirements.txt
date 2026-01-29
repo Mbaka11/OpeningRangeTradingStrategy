@@ -14,6 +14,14 @@ python-dotenv>=1.0,<2
 tqdm>=4.66,<5
 tweepy>=4.14,<5
 
-#test
+# Testing
 pytest>=7.4,<8
 pytest-mock>=3.11,<4
+
+# GovTrades service (future - uncomment when needed)
+# sqlalchemy>=2.0,<3
+# psycopg2-binary>=2.9,<3
+# alembic>=1.13,<2
+# pdfplumber>=0.10,<1
+# openai>=1.0,<2
+# anthropic>=0.18,<1
