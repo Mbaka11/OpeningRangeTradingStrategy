@@ -75,12 +75,12 @@ def format_session_overview() -> str:
 def format_services_status() -> str:
     """Returns a string showing the status of all available services."""
     services = [
-        ("Trading", "✅ Active"),
-        ("GovTrades", "🚧 In Progress"),
+        ("Trading", "Active"),
+        ("GovTrades", "In Progress"),
     ]
-    lines = ["📊 OpeningRange Services:"]
+    lines = ["OpeningRange Services:"]
     for name, status in services:
-        lines.append(f"  • {name}: {status}")
+        lines.append(f"  - {name}: {status}")
     return "\n".join(lines)
 
 
