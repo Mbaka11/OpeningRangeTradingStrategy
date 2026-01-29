@@ -1,5 +1,6 @@
 # OpeningRange
 
+[Deployment Guide](DEPLOYMENT.md) | 📊 [Documentation](docs/)
 A multi-service Python project running on GCP, featuring:
 
 - **Trading Bot** - Opening Range strategy on NSXUSD (NAS100)
