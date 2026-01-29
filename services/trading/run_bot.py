@@ -72,6 +72,18 @@ def format_session_overview() -> str:
     )
 
 
+def format_services_status() -> str:
+    """Returns a string showing the status of all available services."""
+    services = [
+        ("Trading", "✅ Active"),
+        ("GovTrades", "🚧 In Progress"),
+    ]
+    lines = ["📊 OpeningRange Services:"]
+    for name, status in services:
+        lines.append(f"  • {name}: {status}")
+    return "\n".join(lines)
+
+
 def compute_signal(win_df: pd.DataFrame, or_df: pd.DataFrame):
     # replicate or_core decision using latest dataframes
     or_high = or_df["high"].max()
@@ -241,8 +253,11 @@ def main_loop():
     # Pre-open status
     try:
         overview = format_session_overview()
+        services_status = format_services_status()
         logger.info(f"STARTUP {overview}")
-        notifier.notify_trade(f"Bot ready: {overview}")
+        logger.info(f"SERVICES\n{services_status}")
+        startup_msg = f"{services_status}\n\n🤖 Trading Bot ready:\n{overview}"
+        notifier.notify_trade(startup_msg)
     except Exception:
         logger.exception("Notifier error while posting pre-open status")
     
