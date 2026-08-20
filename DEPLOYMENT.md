@@ -1,134 +1,94 @@
-# Google Cloud Deployment Guide
+# Free Deployment: Cloud Run Job + Cloud Scheduler
 
-This project runs on a Google Compute Engine VM (`openingrange-bot`) using Docker. The deployment workflow involves building the image in Cloud Shell and then pulling/restarting it on the VM.
+This is the recommended paper-trading deployment. The bot runs only for the New York market session, then exits, instead of keeping a VM online 24/7.
 
-## 1. One-Time Setup (Configuration)
+## What is deployed
 
-_Do this only if you created a new VM or need to change your API keys._
+- **Cloud Run Job** — starts on weekdays at **09:25 America/New_York**, builds the opening range, submits/manages the OANDA **practice** order, posts the consolidated X updates, closes at noon, posts the recap, and exits.
+- **Cloud Scheduler** — invokes that one job every weekday.
+- **Artifact Registry** — holds the Docker image.
+- **Secret Manager** — holds one mounted `.env` secret. It is deliberately one secret to remain within the free active-secret allowance.
+- **Cloud Logging** — receives container stdout. `LOG_TO_FILE=false` avoids ephemeral local log files in Cloud Run.
 
-1. **SSH into the VM:**
+The job is configured for **1 vCPU**, **1 GiB RAM**, a **3-hour timeout**, one task, and **zero retries**. At roughly 2h35m on each weekday, this is intended to remain within Cloud Run's monthly free-job compute allowance. Check Billing after the first full month—providers can change free-tier terms.
 
-```bash
-gcloud compute ssh openingrange-bot --zone us-central1-a
+> The deployment script refuses `OANDA_ENV=live`. It is intentionally for paper trading only.
 
-```
+## Prerequisites
 
-2. **Create/Update the `.env` file:**
-   _This file stays on the server and is not in the git repo._
+1. A Google Cloud project with billing enabled. Free-tier usage still requires a billing account.
+2. The Google Cloud CLI authenticated to that project:
 
-```bash
-export TERM=xterm   # Fixes the "Error opening terminal" issue
-nano .env
+   ```bash
+   gcloud auth login
+   gcloud auth application-default login
+   gcloud projects list
+   ```
 
-```
+3. This repository and a local `.env` copied from `.env.example` with all OANDA practice and X credentials.
+4. An X API credit balance. The deployment does not bypass X API billing.
 
-3. **Paste your configuration:**
+## One-command deployment
 
-```env
-OANDA_ACCOUNT_ID=101-001-YOUR-ID
-OANDA_API_TOKEN=your_oanda_token
-OANDA_ENV=practice
-OANDA_INSTRUMENT=NAS100_USD
-OANDA_TIMEZONE=America/New_York
-
-```
-
-_(Press `Ctrl+O` to Save, `Ctrl+X` to Exit)_
-
----
-
-## 2. Routine Deployment Cycle
-
-_Follow these steps every time you modify the code._
-
-### Phase A: Build & Push (In Cloud Shell)
-
-1. Navigate to your project folder:
+Run in **Google Cloud Shell** or from a machine with the Google Cloud CLI installed. From the repository root:
 
 ```bash
-cd OpeningRangeTradingStrategy
-
+chmod +x scripts/deploy_cloud_run_job.sh
+./scripts/deploy_cloud_run_job.sh YOUR_PROJECT_ID
 ```
 
-2. Build and upload the new Docker image:
+Optional second argument chooses a Cloud Run region (default `us-central1`):
 
 ```bash
-gcloud builds submit --tag gcr.io/onyx-seeker-479417-d5/my-bot-image .
-
+./scripts/deploy_cloud_run_job.sh YOUR_PROJECT_ID us-central1
 ```
 
-### Phase B: Update the Bot (In the VM)
+The script:
 
-1. **SSH into the VM:**
+1. Validates `.env` and confirms `OANDA_ENV=practice`.
+2. Enables the required APIs.
+3. Creates a Docker Artifact Registry repository and two least-privilege service accounts if needed.
+4. Uploads `.env` as a **single** Secret Manager secret and grants only the runtime service account access.
+5. Builds and pushes the Docker image.
+6. Deploys/updates the Cloud Run job with `RUN_SINGLE_SESSION=true`, `LOG_TO_FILE=false`, and `--max-retries=0`.
+7. Creates the timezone-aware weekday Scheduler trigger.
+
+Never commit `.env` or paste its values into the terminal history.
+
+## Verify deployment
 
 ```bash
-gcloud compute ssh openingrange-bot --zone us-central1-a
+PROJECT_ID=YOUR_PROJECT_ID
+REGION=us-central1
+JOB=opening-range-bot
 
+# Inspect the job and weekday scheduler.
+gcloud run jobs describe "$JOB" --project="$PROJECT_ID" --region="$REGION"
+gcloud scheduler jobs describe opening-range-weekday-session \
+  --project="$PROJECT_ID" --location="$REGION"
+
+# Inspect completed scheduled executions and logs.
+gcloud run jobs executions list --job="$JOB" --project="$PROJECT_ID" --region="$REGION"
+gcloud logging read \
+  'resource.type="cloud_run_job" AND resource.labels.job_name="opening-range-bot"' \
+  --project="$PROJECT_ID" --limit=100 --format='value(textPayload)'
 ```
 
-2. **Authenticate Docker:**
-   _Required because the VM runs Container-Optimized OS with read-only root._
+Do **not** manually execute the production job outside the intended session: it can submit a real order to the OANDA *practice* account and consume X API credits. Use the local replay workflow in `README.md` for safe testing.
+
+## Update deployment
+
+After code changes, run the same command again. It builds a new commit-tagged image and updates the existing job and scheduler:
 
 ```bash
-# 1. Generate Auth Token
-TOKEN=$(curl -s -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | grep -o '"access_token":"[^" ]*"' | cut -d'"' -f4)
-
-# 2. Create Temp Config Folder
-mkdir -p $(pwd)/.docker-temp
-
-# 3. Login
-sudo docker --config $(pwd)/.docker-temp login -u oauth2accesstoken -p "$TOKEN" https://gcr.io
-
+./scripts/deploy_cloud_run_job.sh YOUR_PROJECT_ID
 ```
 
-3. **Pull the Latest Image:**
+## Operational safeguards
 
-```bash
-sudo docker --config $(pwd)/.docker-temp pull gcr.io/onyx-seeker-479417-d5/my-bot-image:latest
-
-```
-
-4. **Restart the Container:**
-
-```bash
-# 1. Find the running container ID
-sudo docker ps
-
-# 2. Stop and Remove the old container (Replace <ID> with actual ID)
-sudo docker stop <ID>
-sudo docker rm <ID>
-
-# 3. Create logs directory (to persist data across updates)
-mkdir -p $(pwd)/logs
-
-# 4. Start the new version (Linking .env and mounting logs)
-sudo docker run -d \
-  --name trading-bot \
-  --restart always \
-  --env-file .env \
-  -v $(pwd)/logs:/app/logs \
-  gcr.io/onyx-seeker-479417-d5/my-bot-image:latest
-
-```
-
----
-
-## 3. Monitoring & Logs
-
-To check if the bot is running correctly:
-
-- **View live logs:**
-
-```bash
-sudo docker logs -f trading-bot
-
-```
-
-_(Press `Ctrl+C` to exit)_
-
-- **Check status:**
-
-```bash
-sudo docker ps
-
-```
+- The bot is restricted to `OANDA_ENV=practice` by the deployment script.
+- `RUN_SINGLE_SESSION=true` makes the Cloud Run Job exit immediately after the final recap.
+- `--max-retries=0` prevents Cloud Run from retrying a failed task and accidentally duplicating paper orders/posts.
+- Cloud Run filesystem state is ephemeral. Use Cloud Logging for operations; local `logs/` are not durable in this deployment.
+- Keep X posting credits funded. A failed X post is logged but does not block OANDA risk management.
+- Review the OANDA practice account and Cloud Logging after each of the first few runs before relying on unattended scheduling.

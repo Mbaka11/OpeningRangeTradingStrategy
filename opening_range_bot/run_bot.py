@@ -25,6 +25,9 @@ POSITION_SIZE = INSTRUMENTS.get("market", {}).get("position_size", 1.0)
 POINT_VAL = INSTRUMENTS.get("market", {}).get("point_value_usd", 80.0)
 REPLAY_FILE = os.getenv("REPLAY_FILE")  # if set, run once on this CSV instead of live polling
 REPLAY_TWEETS = os.getenv("REPLAY_TWEETS", "false").lower() == "true"
+# Cloud Run Jobs run one market session and must terminate after its final recap.
+# The default remains the existing always-on VM/container behavior.
+RUN_SINGLE_SESSION = os.getenv("RUN_SINGLE_SESSION", "false").lower() == "true"
 
 OR_START = INSTRUMENTS.get("session", {}).get("or_window", {}).get("start", "09:30")
 OR_END   = INSTRUMENTS.get("session", {}).get("or_window", {}).get("end_inclusive", "10:00")
@@ -877,6 +880,10 @@ def main_loop():
                 or_chart_buf = None
                 trade_chart_buf = None
                 daily_outcome_reason = None
+
+                if RUN_SINGLE_SESSION:
+                    logger.info("RUN_SINGLE_SESSION=true; completed final recap and exiting.")
+                    return
 
 
 if __name__ == "__main__":

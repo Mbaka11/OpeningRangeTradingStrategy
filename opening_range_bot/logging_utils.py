@@ -8,6 +8,7 @@ import pytz
 LOG_DIR = Path(__file__).resolve().parent.parent / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "bot.log"
+LOG_TO_FILE = os.getenv("LOG_TO_FILE", "true").lower() == "true"
 
 LOG_TZ = pytz.timezone(os.getenv("OANDA_TIMEZONE", "America/New_York"))
 FMT = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
@@ -39,12 +40,14 @@ def setup_logger(name: str = "bot", level=logging.INFO) -> logging.Logger:
     ch.setLevel(level)
     ch.setFormatter(TZFormatter(FMT, DATEFMT, tz=LOG_TZ))
 
-    # Rotating file handler
-    fh = RotatingFileHandler(LOG_FILE, maxBytes=5_000_000, backupCount=5)
-    fh.setLevel(logging.DEBUG)
-    fh.setFormatter(TZFormatter(FMT, DATEFMT, tz=LOG_TZ))
-
     logger.addHandler(ch)
-    logger.addHandler(fh)
+
+    # Cloud Run captures stdout in Cloud Logging, so disable ephemeral local
+    # files there with LOG_TO_FILE=false. VM deployments retain file logs.
+    if LOG_TO_FILE:
+        fh = RotatingFileHandler(LOG_FILE, maxBytes=5_000_000, backupCount=5)
+        fh.setLevel(logging.DEBUG)
+        fh.setFormatter(TZFormatter(FMT, DATEFMT, tz=LOG_TZ))
+        logger.addHandler(fh)
     logger.propagate = False
     return logger
