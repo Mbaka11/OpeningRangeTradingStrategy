@@ -10,4 +10,4 @@ __pycache__
 data
 reports
 notebooks
-live/logs
+logs

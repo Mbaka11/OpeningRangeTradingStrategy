@@ -5,7 +5,7 @@ import os
 import io
 import tweepy
 from dotenv import load_dotenv
-from live.logging_utils import setup_logger
+from opening_range_bot.logging_utils import setup_logger
 
 load_dotenv()
 logger = setup_logger("notifier")

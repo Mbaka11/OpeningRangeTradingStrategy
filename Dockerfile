@@ -23,4 +23,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Run the bot
-CMD ["python", "live/run_bot.py"]
+CMD ["python", "-m", "opening_range_bot.run_bot"]

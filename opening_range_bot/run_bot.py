@@ -1,4 +1,4 @@
-"""Skeleton live/paper runner.
+"""Skeleton live and paper runner.
 - Polls OANDA M1 candles.
 - Builds OR (09:30–10:00 NY), decides at 10:22 using or_core logic.
 - One trade/day, SL/TP attached, hard flat at 12:00.
@@ -12,12 +12,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from live import data_feed, broker_oanda
-from live import notifier, plotting
-from live.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
-from live.logging_utils import setup_logger
+from opening_range_bot import data_feed, broker_oanda
+from opening_range_bot import notifier, plotting
+from opening_range_bot.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
+from opening_range_bot.logging_utils import setup_logger
 from src import or_core
-from live.trade_types import DailyLog, SessionSetup, SignalDecision, TradeResult
+from opening_range_bot.trade_types import DailyLog, SessionSetup, SignalDecision, TradeResult
 NY = pytz.timezone(OANDA_TIMEZONE)
 logger = setup_logger("bot")
 PLACE_ORDERS = True  # toggle to True when ready
@@ -199,7 +199,7 @@ def main_loop():
     last_trade_date = None
     last_heartbeat_at = None
     summary = {"signals": 0, "orders": 0, "skipped": 0, "errors": 0, "last_signal": None}
-    summary_path = Path(__file__).resolve().parent / "logs" / "summaries"
+    summary_path = ROOT / "logs" / "summaries"
     summary_path.mkdir(parents=True, exist_ok=True)
     trade_log_path = summary_path / "trade_days.csv"
     summary_flushed_for = None

@@ -15,4 +15,5 @@ fi
 
 # 3. Execute the Python analysis script
 # Redirect stdout/stderr to a log file for debugging
-python scripts/analyze_json_logs.py >> live/logs/cron_analysis.log 2>&1
+mkdir -p logs
+python scripts/analyze_json_logs.py >> logs/cron_analysis.log 2>&1

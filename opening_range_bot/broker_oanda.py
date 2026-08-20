@@ -1,7 +1,7 @@
 """Thin OANDA order wrapper (practice/live toggle via config)."""
 import requests
-from live.config import OANDA_API_BASE, OANDA_API_TOKEN, OANDA_ACCOUNT_ID, OANDA_INSTRUMENT
-from live.logging_utils import setup_logger
+from opening_range_bot.config import OANDA_API_BASE, OANDA_API_TOKEN, OANDA_ACCOUNT_ID, OANDA_INSTRUMENT
+from opening_range_bot.logging_utils import setup_logger
 
 logger = setup_logger("broker")
 

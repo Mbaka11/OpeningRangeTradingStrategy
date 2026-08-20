@@ -106,7 +106,7 @@ sudo docker run -d \
   --name trading-bot \
   --restart always \
   --env-file .env \
-  -v $(pwd)/logs:/app/live/logs \
+  -v $(pwd)/logs:/app/logs \
   gcr.io/onyx-seeker-479417-d5/my-bot-image:latest
 
 ```

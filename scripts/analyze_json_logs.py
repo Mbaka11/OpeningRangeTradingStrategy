@@ -17,11 +17,11 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from live import notifier
-from live.logging_utils import setup_logger
+from opening_range_bot import notifier
+from opening_range_bot.logging_utils import setup_logger
 
 logger = setup_logger("analyzer")
-JSON_DIR = ROOT / "live" / "logs" / "summaries" / "daily_json"
+JSON_DIR = ROOT / "logs" / "summaries" / "daily_json"
 
 def load_all_logs():
     data = []

@@ -7,8 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from live import broker_oanda
-from live.config import OANDA_ENV
+from opening_range_bot import broker_oanda
+from opening_range_bot.config import OANDA_ENV
 
 def main():
     print(f"--- OANDA Account List ({OANDA_ENV}) ---")

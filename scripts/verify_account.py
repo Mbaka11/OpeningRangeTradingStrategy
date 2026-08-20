@@ -5,11 +5,11 @@ Usage: python scripts/verify_account.py
 import sys
 from pathlib import Path
 
-# Add project root to path so we can import live modules
+# Add project root to path so we can import bot modules
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from live import broker_oanda
-from live.config import OANDA_ACCOUNT_ID, OANDA_ENV
+from opening_range_bot import broker_oanda
+from opening_range_bot.config import OANDA_ACCOUNT_ID, OANDA_ENV
 
 def main():
     print(f"--- OANDA Account Verification ---")

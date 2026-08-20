@@ -106,7 +106,7 @@ All plots will include intuitive titles, units, and short captions.
 
 ---
 
-## Environment (for live/paper trading setup)
+## Environment (for live and paper trading setup)
 
 Create a `.env` (ignored by Git) from `.env.example` and fill in your broker creds:
 
@@ -125,35 +125,34 @@ Variables:
 
 Keep the `.env` file out of version control; `.gitignore` already excludes it.
 
-### Suggested repo layout for live/paper bot
+### Repository layout
 
-- `notebooks/` — research (keep as-is).
-- `src/` — core strategy logic (reused by live runner).
-- `config/` — YAML configs + `.env` for secrets (not committed).
-- `live/` (new) — bot code:
-  - `live/run_bot.py` — main loop (ingest prices, decide at 10:22, manage orders/flat at 12:00).
-  - `live/broker_oanda.py` — thin OANDA client (paper/live toggle).
-  - `live/data_feed.py` — OANDA candle/tick polling, UTC→NY conversion, minute bar assembly.
-  - `live/logs/` — runtime logs; `live/state/` — checkpoints (e.g., last trade date).
-- `scripts/` — helper scripts:
-  - `verify_account.py` — check connection, currency, and margin availability.
-  - `list_accounts.py` — list all accounts accessible by the current token.
-  - `analyze_json_logs.py` — generates performance metrics and charts from daily JSON logs.
-  - `run_analysis_cron.sh` — wrapper for scheduled analysis.
+- `notebooks/` — strategy research and backtesting notebooks.
+- `src/` — shared core strategy logic used by notebooks and the bot.
+- `config/` — versioned strategy and instrument YAML configuration.
+- `opening_range_bot/` — shallow runtime package for live, paper, and replay execution:
+  - `run_bot.py` — main loop and replay entry point.
+  - `broker_oanda.py` — thin OANDA client with practice/live environment support.
+  - `data_feed.py` — OANDA candle polling, UTC→NY conversion, and minute-bar handling.
+  - `logging_utils.py`, `notifier.py`, and `plotting.py` — runtime logging, alerts, and charts.
+- `scripts/` — session fetching, account checks, and log-analysis helpers.
+- `tests/` — automated strategy/runtime parity tests.
+- `logs/` — ignored mutable bot logs and daily summaries, created at runtime.
+- `docs/assets/` — tracked documentation-image location and usage guidance.
 
 ### Quick replay workflow (fetch a day and simulate)
 
 1. Fetch a session day (NY 09:00–13:00) to CSV (example for 2025-11-27):
-   - Linux/macOS/WSL: `python live/fetch_session.py 2025-11-27`
-   - PowerShell (Windows): `python live/fetch_session.py 2025-11-27`
+   - Linux/macOS/WSL: `python scripts/fetch_session.py 2025-11-27`
+   - PowerShell (Windows): `python scripts/fetch_session.py 2025-11-27`
      Output: `data/raw/replay_2025-11-27.csv`
 2. Run the bot in replay mode against that file (no live calls):
    - **Basic Replay (Logs only):**
-     - PowerShell: `$env:REPLAY_FILE="data/raw/replay_2025-11-24.csv"; python live/run_bot.py`
-     - Linux/macOS: `REPLAY_FILE=data/raw/replay_2025-11-24.csv python live/run_bot.py`
+     - PowerShell: `$env:REPLAY_FILE="data/raw/replay_2025-11-27.csv"; python -m opening_range_bot.run_bot`
+     - Linux/macOS: `REPLAY_FILE=data/raw/replay_2025-11-27.csv python -m opening_range_bot.run_bot`
    - **Full Replay (Logs + Tweet + Chart):**
-     - PowerShell: `$env:REPLAY_TWEETS="true"; $env:REPLAY_FILE="data/raw/replay_2025-11-24.csv"; python live/run_bot.py`
-     - Linux/macOS: `REPLAY_TWEETS=true REPLAY_FILE=data/raw/replay_2025-11-24.csv python live/run_bot.py`
+     - PowerShell: `$env:REPLAY_TWEETS="true"; $env:REPLAY_FILE="data/raw/replay_2025-11-27.csv"; python -m opening_range_bot.run_bot`
+     - Linux/macOS: `REPLAY_TWEETS=true REPLAY_FILE=data/raw/replay_2025-11-27.csv python -m opening_range_bot.run_bot`
        _Generates a consolidated report with OR levels, trade signal, PnL, MFE/MAE stats, and attaches a chart image._
 
 ### Docker & Verification Commands

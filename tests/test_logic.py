@@ -1,6 +1,6 @@
 """
-Tests for strategy logic parity between Live and Replay.
-Run with: pytest tests/test_logic.py
+Tests for strategy logic parity between live execution and replay.
+Run with: python -m pytest tests/test_logic.py
 """
 import sys
 from pathlib import Path
@@ -12,7 +12,7 @@ import pytz
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from live.run_bot import compute_signal, check_or_completeness
+from opening_range_bot.run_bot import compute_signal, check_or_completeness
 
 # Mock configuration constants for the test
 ENTRY_TIME_STR = "10:22"
