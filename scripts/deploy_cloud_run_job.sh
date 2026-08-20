@@ -100,7 +100,13 @@ if ! gcloud secrets describe "${SECRET_NAME}" >/dev/null 2>&1; then
     --labels="app=opening-range-bot"
 fi
 # A single mounted dotenv secret keeps this within Secret Manager's free active-secret allowance.
-gcloud secrets versions add "${SECRET_NAME}" --data-file=.env >/dev/null
+# Keep exactly one enabled version when rotating .env during later deployments.
+secret_version="$(gcloud secrets versions add "${SECRET_NAME}" --data-file=.env --format='value(name)')"
+while IFS= read -r version; do
+  if [[ -n "${version}" && "${version}" != "${secret_version}" ]]; then
+    gcloud secrets versions disable "${version}" --secret="${SECRET_NAME}" >/dev/null
+  fi
+done < <(gcloud secrets versions list "${SECRET_NAME}" --filter='state=ENABLED' --format='value(name)')
 gcloud secrets add-iam-policy-binding "${SECRET_NAME}" \
   --member="serviceAccount:${RUNTIME_SA}" \
   --role="roles/secretmanager.secretAccessor" >/dev/null
