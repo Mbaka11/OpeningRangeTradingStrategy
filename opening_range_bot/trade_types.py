@@ -45,6 +45,9 @@ class PreTradeChecks(TypedDict):
 
 class TradeResult(TypedDict):
     side: str
+    entry_price: Optional[float]
+    exit_price: Optional[float]
+    exit_timestamp: Optional[Any]
     pnl_points: Optional[float]
     pnl_usd: Optional[float]
     exit_reason: str

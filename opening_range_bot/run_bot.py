@@ -13,8 +13,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from opening_range_bot import data_feed, broker_oanda
-from opening_range_bot import notifier, plotting
-from opening_range_bot.config import INSTRUMENTS, STRATEGY, OANDA_TIMEZONE
+from opening_range_bot import notifier, plotting, tweet_formatter
+from opening_range_bot.config import INSTRUMENTS, STRATEGY, OANDA_ENV, OANDA_TIMEZONE
 from opening_range_bot.logging_utils import setup_logger
 from src import or_core
 from opening_range_bot.trade_types import DailyLog, SessionSetup, SignalDecision, TradeResult
@@ -211,6 +211,9 @@ def main_loop():
     skipped_days = {}
     session_started_for = None
     handled_days = set()
+    or_chart_buf = None
+    trade_chart_buf = None
+    daily_outcome_reason = None
 
     # RECOVERY: Attempt to load existing daily_details if restarting mid-day
     try:
@@ -223,13 +226,10 @@ def main_loop():
     except Exception as e:
         logger.warning(f"Could not recover existing JSON log: {e}")
 
-    # Pre-open status
-    try:
-        overview = format_session_overview()
-        logger.info(f"STARTUP {overview}")
-        notifier.notify_trade(f"Bot ready: {overview}")
-    except Exception:
-        logger.exception("Notifier error while posting pre-open status")
+    # Log startup details. Normal X cadence starts with the consolidated
+    # signal post, avoiding a separate paid startup post.
+    overview = format_session_overview()
+    logger.info(f"STARTUP {overview}")
     while True:
         try:
             fetch_latency_ms = None
@@ -241,6 +241,9 @@ def main_loop():
             if in_session_window and session_announced_for != ny_now.date():
                 logger.info(f"SESSION_START {format_session_overview()}")
                 session_announced_for = ny_now.date()
+                # Mark the session before external account calls so a transient
+                # account-summary failure cannot suppress the final recap.
+                session_started_for = ny_now.date()
                 try:
                     # If the bot restarted mid-session, ensure we are flat
                     open_trades = broker_oanda.get_open_trades()
@@ -248,7 +251,6 @@ def main_loop():
                         logger.warning(f"Found {len(open_trades)} open trades at session start; closing them.")
                         broker_oanda.close_all_trades()
                     start_account_snapshot = broker_oanda.get_account_summary()
-                    session_started_for = ny_now.date()
                     logger.info(
                         "SESSION_ACCOUNT_START "
                         f"balance={start_account_snapshot['balance']:.2f} "
@@ -257,7 +259,8 @@ def main_loop():
                         f"open_trades={start_account_snapshot['open_trade_count']} "
                         f"ccy={start_account_snapshot['currency']}"
                     )
-                    notifier.notify_trade(f"Session live: {format_session_overview()}")
+                    # Session details are included in the consolidated signal
+                    # or no-trade recap instead of a separate X post.
                 except Exception:
                     logger.exception("Could not fetch account summary at session start")
 
@@ -305,21 +308,26 @@ def main_loop():
 
             # Safety: Don't enter trades if the session is already over (e.g. late start)
             if ny_now.time() >= EXIT_T_T:
-                # Safety: Ensure any lingering trades are closed if we wake up past exit time
+                # Safety: Ensure any lingering trades are closed if we wake up past exit time.
+                # Report the closure in the single final recap instead of a
+                # separate paid warning post.
+                closed_lingering_trade = False
                 try:
                     if broker_oanda.get_open_trades():
                         logger.warning("Found open trades past hard exit time. Closing all.")
                         broker_oanda.close_all_trades()
-                        notifier.notify_trade("WARNING: Closed lingering trades found past hard exit.")
+                        closed_lingering_trade = True
                 except Exception:
                     logger.exception("Failed to check/close trades in safety block")
 
                 msg = f"Current time {ny_now.strftime('%H:%M')} is past hard exit {EXIT_T}. Skipping trade entry."
                 logger.warning(msg)
-                try:
-                    notifier.notify_trade(f"WARNING: {msg}")
-                except Exception:
-                    logger.exception("Notifier error while posting skip day alert")
+                daily_outcome_reason = (
+                    "past_hard_exit_closed_lingering"
+                    if closed_lingering_trade
+                    else "past_hard_exit"
+                )
+                session_started_for = trade_date
                 last_trade_date = trade_date
                 summary["skipped"] += 1
                 handled_days.add(trade_date)
@@ -333,10 +341,7 @@ def main_loop():
                     summary["skipped"] += 1
                     msg = f"Skipping day (missing entry bar {ENTRY_T} after 5m wait)"
                     logger.warning(msg)
-                    try:
-                        notifier.notify_trade(f"WARNING: {msg}")
-                    except Exception:
-                        logger.exception("Notifier error while posting skip day alert")
+                    daily_outcome_reason = "missing_entry_bar"
                     handled_days.add(trade_date)
                     last_trade_date = trade_date
                 time.sleep(60); continue
@@ -347,10 +352,7 @@ def main_loop():
                     summary["skipped"] += 1
                     msg = f"Skipping day (missing exit bar {EXIT_T})"
                     logger.warning(msg)
-                    try:
-                        notifier.notify_trade(f"WARNING: {msg}")
-                    except Exception:
-                        logger.exception("Notifier error while posting skip day alert")
+                    daily_outcome_reason = "missing_exit_bar"
                     handled_days.add(trade_date)
                     last_trade_date = trade_date
                 time.sleep(60); continue
@@ -391,12 +393,7 @@ def main_loop():
                         skipped_days[trade_date] = "or_incomplete"
                         summary["skipped"] += 1
                         logger.warning(log_msg)
-                        try:
-                            if tweet_msg:
-                                notifier.notify_trade(tweet_msg)
-                        except Exception:
-                            logger.exception("Notifier error while posting skip day alert")
-                        
+                        daily_outcome_reason = "or_incomplete"
                         handled_days.add(trade_date)
                         last_trade_date = trade_date
                         time.sleep(60)
@@ -412,15 +409,13 @@ def main_loop():
                         summary["skipped"] += 1
                         msg = "Skipping day (OR range zero)"
                         logger.warning(msg)
-                        try:
-                            notifier.notify_trade(f"WARNING: {msg}")
-                        except Exception:
-                            logger.exception("Notifier error while posting skip day alert")
+                        daily_outcome_reason = "or_zero_range"
                         handled_days.add(trade_date)
                         last_trade_date = trade_date
                     time.sleep(60); continue
                 
-                # OR is valid; announce levels if not yet done
+                # OR is valid; archive levels and prepare the chart for the
+                # consolidated signal/no-trade post.
                 if trade_date not in skipped_days and or_announced_for != trade_date:
                     or_rng = or_high - or_low
                     t_cut = or_high - TOP_PCT * or_rng
@@ -446,19 +441,16 @@ def main_loop():
                     }
                     logger.info(msg)
                     
-                    # Generate OR Chart
-                    img_buf = None
+                    # Generate the OR chart now, but attach it later so OR
+                    # levels do not consume a separate paid X post.
+                    or_chart_buf = None
                     try:
-                        img_buf = plotting.create_or_chart(
+                        or_chart_buf = plotting.create_or_chart(
                             slice_or, trade_date, or_high, or_low, t_cut, b_cut
                         )
                     except Exception:
                         logger.exception("Failed to generate OR chart")
 
-                    try:
-                        notifier.notify_trade(msg, image_buffer=img_buf)
-                    except Exception:
-                        logger.exception("Notifier error OR levels")
                     or_announced_for = trade_date
 
             if ny_now < entry_wait_dt:
@@ -485,11 +477,23 @@ def main_loop():
                     time.sleep(10)
                     continue
                 logger.info(f"No trade ({reason})")
-                # Optional: Tweet that no trade was taken
-                try:
-                    notifier.notify_trade(f"No trade taken ({reason})")
-                except Exception:
-                    logger.exception("Notifier error no trade")
+                daily_outcome_reason = reason
+                setup = daily_details.get("session_setup", {})
+                or_rng_log = setup.get("or_range", 0.0)
+                entry_rows = slice_win.loc[slice_win.index.time == ENTRY_T_T]
+                entry_price = float(entry_rows.iloc[0]["close"]) if not entry_rows.empty else None
+                daily_details["signal_decision"] = {
+                    "signal_type": "none",
+                    "signal_reason": reason,
+                    "entry_price": entry_price,
+                    "entry_bounds": {
+                        "top_cut": setup.get("or_high", 0.0) - TOP_PCT * or_rng_log,
+                        "bottom_cut": setup.get("or_low", 0.0) + BOT_PCT * or_rng_log,
+                    },
+                    "timestamp": str(ny_now),
+                }
+                # The single no-trade post is sent with final balances after
+                # the session closes.
                 last_trade_date = trade_date
                 summary["skipped"] += 1
                 handled_days.add(trade_date)
@@ -525,6 +529,9 @@ def main_loop():
                 # Check if order was immediately rejected (e.g. INSUFFICIENT_MARGIN)
                 if "orderCancelTransaction" in resp:
                     cancel_reason = resp["orderCancelTransaction"].get("reason", "UNKNOWN")
+                    daily_outcome_reason = f"order_rejected:{cancel_reason.lower()}"
+                    daily_details["signal_decision"]["signal_reason"] = f"order_rejected:{cancel_reason}"
+                    summary["skipped"] += 1
                     if cancel_reason == "INSUFFICIENT_MARGIN":
                         acct = broker_oanda.get_account_summary()
                         margin_avail = acct.get("margin_available", 0)
@@ -534,7 +541,6 @@ def main_loop():
                                    f"Margin Avail: {margin_avail:,.2f} {ccy}. "
                                    "Strategy requires more capital for this size.")
                         logger.error(err_msg)
-                        notifier.notify_trade(f"CRITICAL: {err_msg}")
                     else:
                         logger.error(f"Order rejected: {cancel_reason}")
                 else:
@@ -564,12 +570,43 @@ def main_loop():
                         logger.warning("Could not parse fill details; stats may use signal price.")
 
                     summary["orders"] += 1
+                    daily_details["signal_decision"]["entry_price"] = entry
+
+                    # Post 1/2: session, OR, accepted trade, risk, and account
+                    # values in one message with the OR chart.
                     try:
-                        notifier.notify_trade(f"Paper trade {side.upper()} @ {entry:.2f} SL {sl:.2f} TP {tp:.2f} ({trade_date})")
+                        account_for_post = start_account_snapshot
+                        if account_for_post is None:
+                            account_for_post = broker_oanda.get_account_summary()
+                            start_account_snapshot = account_for_post
+                        setup = daily_details["session_setup"]
+                        bounds = daily_details["signal_decision"]["entry_bounds"]
+                        signal_message = tweet_formatter.format_signal_post(
+                            trade_date=trade_date,
+                            instrument=broker_oanda.OANDA_INSTRUMENT,
+                            environment=OANDA_ENV,
+                            or_start=OR_START,
+                            exit_time=EXIT_T,
+                            entry_time=ENTRY_T,
+                            or_low=setup["or_low"],
+                            or_high=setup["or_high"],
+                            long_cut=bounds["top_cut"],
+                            short_cut=bounds["bottom_cut"],
+                            side=side,
+                            entry=entry,
+                            stop_loss=sl,
+                            take_profit=tp,
+                            position_size=POSITION_SIZE,
+                            point_value=POINT_VAL,
+                            account=account_for_post,
+                        )
+                        notifier.notify_trade(signal_message, image_buffer=or_chart_buf)
                     except Exception:
-                        logger.exception("Notifier error while posting trade")
+                        logger.exception("Notifier error while posting consolidated signal")
             else:
                 logger.info("PLACE_ORDERS=False -> log-only mode")
+                daily_outcome_reason = "orders_disabled"
+                summary["skipped"] += 1
 
             last_trade_date = trade_date
 
@@ -602,9 +639,10 @@ def main_loop():
                 else:
                     logger.info("Trade closed by broker; classifying exit using price path.")
                 
-                # Post-trade MFE/MAE analysis
+                # Post-trade MFE/MAE analysis. The chart is retained for the
+                # final consolidated recap instead of posted separately.
                 stats_msg = ""
-                img_buf = None
+                trade_chart_buf = None
                 mfe = 0.0
                 mae = 0.0
                 try:
@@ -641,7 +679,11 @@ def main_loop():
                         # ARCHIVE: Save Trade Result & Path
                         daily_details["trade_result"] = {
                             "side": side,
-                            "pnl_points": 0.0, "pnl_usd": 0.0, # Placeholder, updated at session end if possible
+                            "entry_price": entry,
+                            "exit_price": exit_px,
+                            "exit_timestamp": exit_ts,
+                            "pnl_points": sim_res.get("pnl_pts"),
+                            "pnl_usd": sim_res.get("pnl_usd"),
                             "exit_reason": exit_reason or "unknown",
                             "mfe_points": mfe, "mae_points": mae,
                             "trade_path_candles": df_trade.to_dict(orient="records")
@@ -649,7 +691,7 @@ def main_loop():
                         
                         # Generate Chart
                         try:
-                            img_buf = plotting.create_trade_chart(
+                            trade_chart_buf = plotting.create_trade_chart(
                                 df_plot, trade_date, ENTRY_T_T, exit_ts, 
                                 entry, exit_px, side, 
                                 or_high, or_low, sl, tp, mfe, mae, exit_reason=exit_reason
@@ -661,29 +703,19 @@ def main_loop():
                 except Exception:
                     logger.exception("Failed to calculate MFE/MAE")
 
-                # Send Consolidated Tweet
-                try:
-                    exit_px_disp = f"{exit_px:.2f}" if exit_px is not None else "n/a"
-                    reason_text = {
-                        "sl": "Stop Loss hit",
-                        "tp": "Take Profit hit",
-                        "time": f"Hard Exit @ {EXIT_T} NY",
+                if "trade_result" not in daily_details:
+                    daily_details["trade_result"] = {
+                        "side": side,
+                        "entry_price": entry,
+                        "exit_price": exit_px,
+                        "exit_timestamp": exit_ts,
+                        "pnl_points": None,
+                        "pnl_usd": None,
+                        "exit_reason": exit_reason or "unknown",
+                        "mfe_points": mfe,
+                        "mae_points": mae,
+                        "trade_path_candles": [],
                     }
-                    if trade_closed_by_broker and exit_reason in ("sl", "tp"):
-                        exit_details = f"{reason_text[exit_reason]} @ {exit_px_disp} (broker).\n"
-                    elif exit_reason == "time":
-                        exit_details = reason_text["time"] + ".\n"
-                    elif trade_closed_by_broker:
-                        exit_details = "Closed by broker (reason unknown).\n"
-                    else:
-                        px_note = f" @ {exit_px_disp}" if exit_px is not None else ""
-                        exit_details = f"Closed{px_note}.\n"
-
-                    full_msg = f"{exit_details}{stats_msg}"
-                    if full_msg.strip():
-                        notifier.notify_trade(full_msg, image_buffer=img_buf)
-                except Exception:
-                    logger.exception("Notifier error while posting exit/stats")
             else: # If not placing orders, just wait until exit time as before
                 while now_ny().time() < EXIT_T_T:
                     time.sleep(30)
@@ -699,10 +731,10 @@ def main_loop():
             if after_exit and last_trade_date and summary_flushed_for != last_trade_date and session_started_for == last_trade_date:
                 fname = summary_path / f"{last_trade_date}_summary.log"
                 end_snapshot = None
+                pnl_nav = None
+                pnl_bal = None
                 try:
                     end_snapshot = broker_oanda.get_account_summary()
-                    pnl_nav = None
-                    pnl_bal = None
                     if start_account_snapshot:
                         pnl_nav = end_snapshot["nav"] - start_account_snapshot.get("nav", 0.0)
                         pnl_bal = end_snapshot["balance"] - start_account_snapshot.get("balance", 0.0)
@@ -777,19 +809,74 @@ def main_loop():
                 with open(fname, "a", encoding="utf-8") as f:
                     f.write(msg + "\n")
                 logger.info(f"Wrote daily summary: {msg}")
+
+                # Final daily post: this is post 2/2 on a trade day, or the
+                # only post on a no-trade day. Operational CRITICAL alerts are
+                # intentionally still sent immediately outside this cadence.
                 try:
-                    notifier.notify_trade(
-                        f"Recap {last_trade_date}: "
-                        f"signals {summary['signals']}, orders {summary['orders']}, skipped {summary['skipped']}, errors {summary['errors']} |"
-                        f"{pnl_nav_str}"
-                    )
+                    trade_result = daily_details.get("trade_result")
+                    signal_decision = daily_details.get("signal_decision", {})
+                    if summary["orders"] > 0 and trade_result:
+                        recap_message = tweet_formatter.format_trade_recap_post(
+                            trade_date=last_trade_date,
+                            instrument=broker_oanda.OANDA_INSTRUMENT,
+                            environment=OANDA_ENV,
+                            side=trade_result.get("side") or signal_decision.get("signal_type", "unknown"),
+                            entry=trade_result.get("entry_price") or signal_decision.get("entry_price"),
+                            exit_price=trade_result.get("exit_price"),
+                            exit_reason=trade_result.get("exit_reason"),
+                            pnl_points=trade_result.get("pnl_points"),
+                            pnl_usd=trade_result.get("pnl_usd"),
+                            mfe=trade_result.get("mfe_points"),
+                            mae=trade_result.get("mae_points"),
+                            start_account=start_account_snapshot,
+                            end_account=end_snapshot,
+                            signals=summary["signals"],
+                            orders=summary["orders"],
+                            skipped=summary["skipped"],
+                            errors=summary["errors"],
+                        )
+                        notifier.notify_trade(recap_message, image_buffer=trade_chart_buf)
+                    else:
+                        setup = daily_details.get("session_setup", {})
+                        bounds = signal_decision.get("entry_bounds", {})
+                        no_trade_reason = (
+                            daily_outcome_reason
+                            or signal_decision.get("signal_reason")
+                            or skipped_days.get(last_trade_date)
+                            or "none"
+                        )
+                        recap_message = tweet_formatter.format_no_trade_recap_post(
+                            trade_date=last_trade_date,
+                            instrument=broker_oanda.OANDA_INSTRUMENT,
+                            environment=OANDA_ENV,
+                            or_start=OR_START,
+                            exit_time=EXIT_T,
+                            entry_time=ENTRY_T,
+                            or_low=setup.get("or_low"),
+                            or_high=setup.get("or_high"),
+                            long_cut=bounds.get("top_cut"),
+                            short_cut=bounds.get("bottom_cut"),
+                            reason=no_trade_reason,
+                            start_account=start_account_snapshot,
+                            end_account=end_snapshot,
+                            signals=summary["signals"],
+                            orders=summary["orders"],
+                            skipped=summary["skipped"],
+                            errors=summary["errors"],
+                        )
+                        notifier.notify_trade(recap_message, image_buffer=or_chart_buf)
                 except Exception:
-                    logger.exception("Notifier error while posting recap")
+                    logger.exception("Notifier error while posting consolidated recap")
+
                 summary = {"signals": 0, "orders": 0, "skipped": 0, "errors": 0, "last_signal": None}
                 daily_details = {}
                 summary_flushed_for = last_trade_date
                 start_account_snapshot = None
                 session_started_for = None
+                or_chart_buf = None
+                trade_chart_buf = None
+                daily_outcome_reason = None
 
 
 if __name__ == "__main__":
@@ -810,6 +897,10 @@ if __name__ == "__main__":
         report_lines = []
         img_buf = None
         or_chart_buf = None
+        sig = None
+        replay_result = None
+        replay_reason = None
+        or_high = or_low = t_cut = b_cut = None
         
         # Extract date for report/chart
         r_date = datetime.now().date()
@@ -820,13 +911,14 @@ if __name__ == "__main__":
 
         # 1. Session Info
         overview = format_session_overview()
-        report_lines.append("--- SESSION LIVE ---")
+        report_lines.append("--- REPLAY SESSION - NO LIVE ORDER ---")
         report_lines.append(f"{overview}")
-        report_lines.append("Account: [BALANCE_START] [NAV_START] (Simulated)")
+        report_lines.append("Account balance/NAV: unavailable in replay")
 
         # Parity check: Ensure OR has full data, just like main_loop
         or_expected_rows = len(pd.date_range(pd.Timestamp(OR_START), pd.Timestamp(OR_END), freq="min"))
         if len(slice_or) != or_expected_rows:
+            replay_reason = "or_incomplete"
             logger.warning(f"Replay: OR incomplete (rows={len(slice_or)} expected={or_expected_rows}); skipping to match live logic")
             report_lines.append(f"\n[SKIPPED] OR incomplete ({len(slice_or)}/{or_expected_rows} rows)")
         else:
@@ -850,10 +942,12 @@ if __name__ == "__main__":
 
             has_entry = any(slice_win.index.time == ENTRY_T_T)
             if not has_entry:
+                replay_reason = "missing_entry"
                 logger.warning("Replay: missing entry bar; skipping")
                 report_lines.append("\n[SKIPPED] Missing entry bar")
             else:
                 sig, reason = compute_signal(slice_win, slice_or)
+                replay_reason = reason
                 if sig is None:
                     logger.info(f"Replay: no trade ({reason})")
                     report_lines.append(f"\n[NO TRADE] {reason}")
@@ -864,20 +958,26 @@ if __name__ == "__main__":
                     report_lines.append(f"SL {sl:.2f} | TP {tp:.2f}")
 
                     # Simulate exit/PnL on the replay window
-                    res = simulate_exit(slice_win, side, entry, sl, tp)
-                    logger.info(f"Replay: Exit {res['exit_reason']} @ {res['exit_px']} | pnl_pts={res['pnl_pts']} pnl_usd={res['pnl_usd']} MFE={res['mfe']:.2f} MAE={res['mae']:.2f}")
-                    
-                    report_lines.append(f"\n[EXIT] {res['exit_reason']} @ {res['exit_px']:.2f}")
-                    report_lines.append(f"PnL: ${res['pnl_usd']:.2f} ({res['pnl_pts']:.2f} pts)")
-                    report_lines.append(f"Stats: MFE +{res['mfe']:.2f} | MAE -{res['mae']:.2f}")
+                    replay_result = simulate_exit(slice_win, side, entry, sl, tp)
+                    logger.info(f"Replay: Exit {replay_result['exit_reason']} @ {replay_result['exit_px']} | pnl_pts={replay_result['pnl_pts']} pnl_usd={replay_result['pnl_usd']} MFE={replay_result['mfe']:.2f} MAE={replay_result['mae']:.2f}")
+
+                    replay_exit = replay_result.get("exit_px")
+                    replay_pnl_usd = replay_result.get("pnl_usd")
+                    replay_pnl_pts = replay_result.get("pnl_pts")
+                    exit_display = f"{replay_exit:.2f}" if replay_exit is not None else "n/a"
+                    pnl_usd_display = f"${replay_pnl_usd:.2f}" if replay_pnl_usd is not None else "n/a"
+                    pnl_pts_display = f"{replay_pnl_pts:.2f}" if replay_pnl_pts is not None else "n/a"
+                    report_lines.append(f"\n[EXIT] {replay_result['exit_reason']} @ {exit_display}")
+                    report_lines.append(f"PnL: {pnl_usd_display} ({pnl_pts_display} pts)")
+                    report_lines.append(f"Stats: MFE +{replay_result['mfe']:.2f} | MAE -{replay_result['mae']:.2f}")
 
                     # Generate Replay Chart
                     try:
                         img_buf = plotting.create_trade_chart(
-                            slice_win, r_date, 
-                            ENTRY_T_T, res['exit_ts'], 
-                            entry, res['exit_px'], side, 
-                            slice_or["high"].max(), slice_or["low"].min(), sl, tp, res['mfe'], res['mae'], exit_reason=res['exit_reason']
+                            slice_win, r_date,
+                            ENTRY_T_T, replay_result['exit_ts'],
+                            entry, replay_result['exit_px'], side,
+                            slice_or["high"].max(), slice_or["low"].min(), sl, tp, replay_result['mfe'], replay_result['mae'], exit_reason=replay_result['exit_reason']
                         )
                     except Exception:
                         logger.exception("Notifier error while generating replay chart")
@@ -885,11 +985,12 @@ if __name__ == "__main__":
         # 4. Recap
         report_lines.append("\n--- RECAP ---")
         # Determine if we had a trade for stats
-        had_trade = 'res' in locals() and res is not None
-        pnl_val = res['pnl_usd'] if had_trade else 0.0
+        had_trade = replay_result is not None
+        pnl_val = replay_result.get("pnl_usd") if had_trade else 0.0
+        pnl_display = f"${pnl_val:.2f}" if pnl_val is not None else "n/a"
         report_lines.append(f"Signals: {1 if had_trade else 0} | Orders: {1 if had_trade else 0}")
-        report_lines.append(f"PnL: ${pnl_val:.2f} (Simulated)")
-        report_lines.append("Account: [BALANCE_END] [NAV_END] (Simulated)")
+        report_lines.append(f"PnL: {pnl_display} (Simulated)")
+        report_lines.append("Account balance/NAV: unavailable in replay")
 
         full_report = "\n".join(report_lines)
         
@@ -900,33 +1001,77 @@ if __name__ == "__main__":
             logger.info("--- CONSOLIDATED REPLAY REPORT ---\n" + full_report.encode("ascii", "replace").decode("ascii"))
 
         if REPLAY_TWEETS:
-            # Construct Tweet (Shortened to <280 chars to avoid 403 errors)
-            tweet_lines = []
-            tweet_lines.append(f"REPLAY {r_date}")
-            tweet_lines.append(f"OR: {slice_or['low'].min():.2f}-{slice_or['high'].max():.2f}")
-            
-            if 'sig' in locals() and sig:
-                side, entry, sl, tp = sig
-                tweet_lines.append(f"Sig: {side.upper()} @ {entry:.2f}")
-                if 'res' in locals():
-                    tweet_lines.append(f"Exit: {res['exit_reason']} @ {res['exit_px']:.2f}")
-                    tweet_lines.append(f"PnL: ${res['pnl_usd']:.0f} (MFE {res['mfe']:.1f}/MAE {res['mae']:.1f})")
-            else:
-                tweet_lines.append("No Trade")
-            
-            tweet_lines.append(f"Simulated at {now_ny().strftime('%H:%M:%S')} NY")
-            tweet_msg = "\n".join(tweet_lines)
-
             try:
-                charts = []
-                if or_chart_buf: charts.append(or_chart_buf)
-                if img_buf: charts.append(img_buf)
+                if sig and replay_result:
+                    side, entry, sl, tp = sig
+                    signal_message = tweet_formatter.format_signal_post(
+                        trade_date=r_date,
+                        instrument=broker_oanda.OANDA_INSTRUMENT,
+                        environment="replay",
+                        or_start=OR_START,
+                        exit_time=EXIT_T,
+                        entry_time=ENTRY_T,
+                        or_low=or_low,
+                        or_high=or_high,
+                        long_cut=t_cut,
+                        short_cut=b_cut,
+                        side=side,
+                        entry=entry,
+                        stop_loss=sl,
+                        take_profit=tp,
+                        position_size=POSITION_SIZE,
+                        point_value=POINT_VAL,
+                        account=None,
+                    )
+                    first_result = notifier.notify_trade(signal_message, image_buffer=or_chart_buf)
+                    if not first_result or first_result.get("status") != "posted":
+                        logger.warning(f"Replay signal post failed: {first_result.get('reason') if first_result else 'unknown'}")
 
-                res = notifier.notify_trade(tweet_msg, images=charts)
-                if res and res.get("status") == "posted":
-                    logger.info("Replay tweet sent.")
+                    recap_message = tweet_formatter.format_trade_recap_post(
+                        trade_date=r_date,
+                        instrument=broker_oanda.OANDA_INSTRUMENT,
+                        environment="replay",
+                        side=side,
+                        entry=entry,
+                        exit_price=replay_result.get("exit_px"),
+                        exit_reason=replay_result.get("exit_reason"),
+                        pnl_points=replay_result.get("pnl_pts"),
+                        pnl_usd=replay_result.get("pnl_usd"),
+                        mfe=replay_result.get("mfe"),
+                        mae=replay_result.get("mae"),
+                        start_account=None,
+                        end_account=None,
+                        signals=1,
+                        orders=1,
+                        skipped=0,
+                        errors=0,
+                    )
+                    second_result = notifier.notify_trade(recap_message, image_buffer=img_buf)
+                    if not second_result or second_result.get("status") != "posted":
+                        logger.warning(f"Replay recap post failed: {second_result.get('reason') if second_result else 'unknown'}")
                 else:
-                    logger.warning(f"Replay tweet failed: {res.get('reason') if res else 'unknown'}")
+                    no_trade_message = tweet_formatter.format_no_trade_recap_post(
+                        trade_date=r_date,
+                        instrument=broker_oanda.OANDA_INSTRUMENT,
+                        environment="replay",
+                        or_start=OR_START,
+                        exit_time=EXIT_T,
+                        entry_time=ENTRY_T,
+                        or_low=or_low,
+                        or_high=or_high,
+                        long_cut=t_cut,
+                        short_cut=b_cut,
+                        reason=replay_reason or "none",
+                        start_account=None,
+                        end_account=None,
+                        signals=0,
+                        orders=0,
+                        skipped=1,
+                        errors=0,
+                    )
+                    replay_post_result = notifier.notify_trade(no_trade_message, image_buffer=or_chart_buf)
+                    if not replay_post_result or replay_post_result.get("status") != "posted":
+                        logger.warning(f"Replay no-trade post failed: {replay_post_result.get('reason') if replay_post_result else 'unknown'}")
             except Exception:
                 logger.exception("Notifier error while posting replay report")
 

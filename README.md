@@ -121,7 +121,9 @@ Variables:
 - `OANDA_ENV` — `practice` or `live` (start with `practice`).
 - `OANDA_INSTRUMENT` — instrument symbol (e.g., `NAS100_USD`).
 - `OANDA_TIMEZONE` — assumed local session timezone (default `America/New_York`).
-- Twitter posting (optional, via API v2): `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_SECRET`. **(Note: Free Tier is text-only. Ensure 'Read and Write' permissions are enabled in Developer Portal).**
+- X/Twitter posting (optional, via API v2): `TWITTER_API_KEY`, `TWITTER_API_SECRET`, `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_SECRET`. Ensure **Read and Write** permissions are enabled in the Developer Portal. X API posting is currently credit-based; the bot minimizes usage to two posts on trade days and one on no-trade days.
+
+See [`docs/assets/tweet-flow-examples.md`](docs/assets/tweet-flow-examples.md) for complete trade-day and no-trade examples with the dark-theme charts.
 
 Keep the `.env` file out of version control; `.gitignore` already excludes it.
 
