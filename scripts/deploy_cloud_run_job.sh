@@ -15,6 +15,8 @@ if ! command -v gcloud >/dev/null 2>&1; then
   windows_python="${windows_root}/platform/bundledpython/python.exe"
   windows_gcloud_py="${windows_root}/lib/gcloud.py"
   if [[ -f "${windows_python}" && -f "${windows_gcloud_py}" ]]; then
+    windows_python="$(cygpath -w "${windows_python}")"
+    windows_gcloud_py="$(cygpath -w "${windows_gcloud_py}")"
     # Run the SDK implementation directly: Bash cannot reliably invoke a
     # Windows .cmd wrapper whose installation path contains spaces.
     gcloud() { MSYS_NO_PATHCONV=1 "${windows_python}" "${windows_gcloud_py}" "$@"; }
