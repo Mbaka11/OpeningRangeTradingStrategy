@@ -17,7 +17,7 @@ if ! command -v gcloud >/dev/null 2>&1; then
   if [[ -f "${windows_python}" && -f "${windows_gcloud_py}" ]]; then
     # Run the SDK implementation directly: Bash cannot reliably invoke a
     # Windows .cmd wrapper whose installation path contains spaces.
-    gcloud() { "${windows_python}" "${windows_gcloud_py}" "$@"; }
+    gcloud() { MSYS_NO_PATHCONV=1 "${windows_python}" "${windows_gcloud_py}" "$@"; }
   fi
 fi
 if ! command -v gcloud >/dev/null 2>&1; then
@@ -104,6 +104,12 @@ gcloud secrets add-iam-policy-binding "${SECRET_NAME}" \
   --role="roles/secretmanager.secretAccessor" >/dev/null
 
 gcloud builds submit --tag="${IMAGE}" .
+
+# A previous deployment may contain a stale secret volume after a secret-path
+# change. Clear it before applying the single /secrets/.env mount below.
+if gcloud run jobs describe "${JOB_NAME}" --region="${REGION}" >/dev/null 2>&1; then
+  gcloud run jobs update "${JOB_NAME}" --region="${REGION}" --clear-secrets >/dev/null
+fi
 
 gcloud run jobs deploy "${JOB_NAME}" \
   --image="${IMAGE}" \
