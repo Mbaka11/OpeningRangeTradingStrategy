@@ -4,6 +4,27 @@
 #   ./scripts/deploy_cloud_run_job.sh YOUR_PROJECT_ID
 set -euo pipefail
 
+# Cloud Shell exposes gcloud on PATH. The fallback supports a just-installed
+# Windows SDK in the current shell before its PATH refreshes.
+if ! command -v gcloud >/dev/null 2>&1; then
+  windows_sdk=""
+  if [[ -n "${LOCALAPPDATA:-}" ]] && command -v cygpath >/dev/null 2>&1; then
+    windows_sdk="$(cygpath -u "${LOCALAPPDATA}")/Google/Cloud SDK/google-cloud-sdk/bin"
+  fi
+  windows_root="$(dirname "${windows_sdk}")"
+  windows_python="${windows_root}/platform/bundledpython/python.exe"
+  windows_gcloud_py="${windows_root}/lib/gcloud.py"
+  if [[ -f "${windows_python}" && -f "${windows_gcloud_py}" ]]; then
+    # Run the SDK implementation directly: Bash cannot reliably invoke a
+    # Windows .cmd wrapper whose installation path contains spaces.
+    gcloud() { "${windows_python}" "${windows_gcloud_py}" "$@"; }
+  fi
+fi
+if ! command -v gcloud >/dev/null 2>&1; then
+  echo "Google Cloud CLI (gcloud) is required. Install it or run in Cloud Shell." >&2
+  exit 1
+fi
+
 PROJECT_ID="${1:?Usage: $0 PROJECT_ID [REGION]}"
 REGION="${2:-us-central1}"
 JOB_NAME="opening-range-bot"
@@ -59,7 +80,7 @@ if ! gcloud artifacts repositories describe "${REPOSITORY}" --location="${REGION
   gcloud artifacts repositories create "${REPOSITORY}" \
     --repository-format=docker \
     --location="${REGION}" \
-    --description="Opening Range bot images"
+    --description="OpeningRangeBotImages"
 fi
 
 if ! gcloud iam service-accounts describe "${RUNTIME_SA}" >/dev/null 2>&1; then
@@ -88,14 +109,13 @@ gcloud run jobs deploy "${JOB_NAME}" \
   --image="${IMAGE}" \
   --region="${REGION}" \
   --service-account="${RUNTIME_SA}" \
-  --set-secrets="/app/.env=${SECRET_NAME}:latest" \
-  --set-env-vars="RUN_SINGLE_SESSION=true,LOG_TO_FILE=false" \
+  --set-secrets="/secrets/.env=${SECRET_NAME}:latest" \
+  --set-env-vars="DOTENV_PATH=/secrets/.env,RUN_SINGLE_SESSION=true,LOG_TO_FILE=false" \
   --cpu=1 \
   --memory=1Gi \
   --tasks=1 \
   --max-retries=0 \
-  --task-timeout=3h \
-  --wait
+  --task-timeout=3h
 
 gcloud run jobs add-iam-policy-binding "${JOB_NAME}" \
   --region="${REGION}" \

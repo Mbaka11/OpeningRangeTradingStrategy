@@ -7,7 +7,7 @@ This is the recommended paper-trading deployment. The bot runs only for the New 
 - **Cloud Run Job** — starts on weekdays at **09:25 America/New_York**, builds the opening range, submits/manages the OANDA **practice** order, posts the consolidated X updates, closes at noon, posts the recap, and exits.
 - **Cloud Scheduler** — invokes that one job every weekday.
 - **Artifact Registry** — holds the Docker image.
-- **Secret Manager** — holds one mounted `.env` secret. It is deliberately one secret to remain within the free active-secret allowance.
+- **Secret Manager** — holds one `.env` secret mounted at `/secrets/.env` (outside the application directory). It is deliberately one secret to remain within the free active-secret allowance.
 - **Cloud Logging** — receives container stdout. `LOG_TO_FILE=false` avoids ephemeral local log files in Cloud Run.
 
 The job is configured for **1 vCPU**, **1 GiB RAM**, a **3-hour timeout**, one task, and **zero retries**. At roughly 2h35m on each weekday, this is intended to remain within Cloud Run's monthly free-job compute allowance. Check Billing after the first full month—providers can change free-tier terms.

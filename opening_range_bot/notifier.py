@@ -7,7 +7,8 @@ import tweepy
 from dotenv import load_dotenv
 from opening_range_bot.logging_utils import setup_logger
 
-load_dotenv()
+# Match config.py: Cloud Run supplies DOTENV_PATH for its mounted dotenv secret.
+load_dotenv(dotenv_path=os.getenv("DOTENV_PATH") or None)
 logger = setup_logger("notifier")
 
 API_KEY = os.getenv("TWITTER_API_KEY", "")

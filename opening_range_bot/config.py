@@ -3,8 +3,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 import yaml
 
-# Load .env if present
-load_dotenv()
+# Load .env if present. Cloud Run mounts the deployment secret at a path
+# outside the application directory and supplies DOTENV_PATH for that file.
+load_dotenv(dotenv_path=os.getenv("DOTENV_PATH") or None)
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
