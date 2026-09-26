@@ -22,6 +22,7 @@ so non-technical users can tweak times and risk numbers without editing code.
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+import math
 from typing import Optional, Dict, Any
 
 import pandas as pd
@@ -129,7 +130,7 @@ def _first_close_at(minute_df: pd.DataFrame, hhmm: str) -> Optional[float]:
 
 # ----------------------------- Public API (Notebook 3) -----------------------------
 
-def load_day_window(date_str: str):
+def load_day_window(date_str: str, *, entry_time: Optional[str] = None):
     """
     Convenience loader used by notebooks/backtests.
 
@@ -161,7 +162,7 @@ def load_day_window(date_str: str):
     missing_win  = int(len(tgt_win) - len(win))
     dupes        = int(or_slice.index.duplicated().sum() + win.index.duplicated().sum())
 
-    has_1022 = any(win.index.time == pd.Timestamp(ENTRY_T).time())
+    has_1022 = any(win.index.time == pd.Timestamp(entry_time or ENTRY_T).time())
     has_1200 = any(win.index.time == pd.Timestamp(EXIT_T).time())
 
     or_high = float(or_slice["high"].max()) if not or_slice.empty else None
@@ -213,7 +214,10 @@ class DaySignal:
     has_1200: bool
     notes: str
 
-def compute_signal_for_date(date_str: str, *, win=None, or_slice=None, qc=None) -> DaySignal:
+def compute_signal_for_date(date_str: str, *, win=None, or_slice=None, qc=None,
+                            entry_time: Optional[str] = None, bot_pct: Optional[float] = None,
+                            top_pct: Optional[float] = None, sl_pts: Optional[float] = None,
+                            tp_pts: Optional[float] = None) -> DaySignal:
     """
     Decide whether to go long, short, or stay out.
 
@@ -223,12 +227,22 @@ def compute_signal_for_date(date_str: str, *, win=None, or_slice=None, qc=None) 
       - If 10:22 is in the top X% of the range: go long. If in bottom X%: short.
       - Otherwise: no trade. Missing/invalid data returns explicit failure states.
     """
+    selected_entry = ENTRY_T if entry_time is None else entry_time
+    selected_bot = BOT_PCT if bot_pct is None else float(bot_pct)
+    selected_top = TOP_PCT if top_pct is None else float(top_pct)
+    selected_sl = SL_PTS if sl_pts is None else float(sl_pts)
+    selected_tp = TP_PTS if tp_pts is None else float(tp_pts)
+    if (not all(math.isfinite(x) for x in (selected_sl, selected_tp, selected_bot, selected_top))
+            or selected_sl <= 0 or selected_tp <= 0 or min(selected_bot, selected_top) < 0
+            or selected_bot + selected_top >= 1
+            or not pd.Timestamp(OR_END).time() < pd.Timestamp(selected_entry).time() < pd.Timestamp(EXIT_T).time()):
+        raise ValueError("Invalid entry/zone/SL/TP research override")
     if (win is None) or (or_slice is None) or (qc is None):
-        win, or_slice, qc = load_day_window(date_str)
+        win, or_slice, qc = load_day_window(date_str, entry_time=selected_entry)
 
     if or_slice.empty or qc.get("or_range") is None or qc.get("or_range") <= 0:
         return DaySignal(
-            date=date_str, decision="invalid_or", entry_time=ENTRY_T,
+            date=date_str, decision="invalid_or", entry_time=selected_entry,
             entry_price=None, sl=None, tp=None,
             or_high=qc.get("or_high"), or_low=qc.get("or_low"), or_range=qc.get("or_range"),
             top_cutoff=None, bottom_cutoff=None,
@@ -240,35 +254,35 @@ def compute_signal_for_date(date_str: str, *, win=None, or_slice=None, qc=None) 
     or_low   = float(qc["or_low"])
     or_range = float(qc["or_range"])
 
-    bottom_cut = or_low  + BOT_PCT * or_range
-    top_cut    = or_high - TOP_PCT * or_range
+    bottom_cut = or_low  + selected_bot * or_range
+    top_cut    = or_high - selected_top * or_range
 
-    e = _first_close_at(win, ENTRY_T)
+    e = _first_close_at(win, selected_entry)
     if e is None:
         return DaySignal(
-            date=date_str, decision="no_signal_missing_1022", entry_time=ENTRY_T,
+            date=date_str, decision="no_signal_missing_1022", entry_time=selected_entry,
             entry_price=None, sl=None, tp=None,
             or_high=or_high, or_low=or_low, or_range=or_range,
             top_cutoff=top_cut, bottom_cutoff=bottom_cut,
             has_1022=False, has_1200=bool(qc.get("has_exit_1200")),
-            notes="No 10:22 bar in trade window."
+            notes=f"No {selected_entry} bar in trade window."
         )
 
     if e >= top_cut:
         decision = "long"
-        sl = e - SL_PTS
-        tp = e + TP_PTS
+        sl = e - selected_sl
+        tp = e + selected_tp
     elif e <= bottom_cut:
         decision = "short"
-        sl = e + SL_PTS
-        tp = e - TP_PTS
+        sl = e + selected_sl
+        tp = e - selected_tp
     else:
         decision = "none"
         sl = None
         tp = None
 
     return DaySignal(
-        date=date_str, decision=decision, entry_time=ENTRY_T,
+        date=date_str, decision=decision, entry_time=selected_entry,
         entry_price=float(e), sl=float(sl) if sl is not None else None, tp=float(tp) if tp is not None else None,
         or_high=or_high, or_low=or_low, or_range=or_range,
         top_cutoff=float(top_cut), bottom_cutoff=float(bottom_cut),
@@ -292,15 +306,20 @@ class DayExecution:
     pnl_usd: Optional[float]
     notes: str
 
-def execute_day(date_str: str) -> DayExecution:
+def execute_day(date_str: str, *, entry_time: Optional[str] = None, bot_pct: Optional[float] = None,
+                top_pct: Optional[float] = None, sl_pts: Optional[float] = None,
+                tp_pts: Optional[float] = None) -> DayExecution:
     """
     Replay the day minute-by-minute after 10:22 and resolve the trade outcome.
 
     Tie-break is conservative: if a bar touches both stop and target, we assume
     the stop is hit first. This errs on the side of worse PnL.
     """
-    win, or_slice, qc = load_day_window(date_str)
-    sig = compute_signal_for_date(date_str, win=win, or_slice=or_slice, qc=qc)
+    selected_entry = ENTRY_T if entry_time is None else entry_time
+    win, or_slice, qc = load_day_window(date_str, entry_time=selected_entry)
+    sig = compute_signal_for_date(date_str, win=win, or_slice=or_slice, qc=qc,
+                                  entry_time=selected_entry, bot_pct=bot_pct, top_pct=top_pct,
+                                  sl_pts=sl_pts, tp_pts=tp_pts)
 
     if sig.decision in ("invalid_or", "no_signal_missing_1022"):
         return DayExecution(
