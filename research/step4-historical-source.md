@@ -43,7 +43,9 @@ The annual orchestrator (`scripts/research/backfill_oanda_history.py`) is dry-ru
 
 Running `scripts/research/audit_oanda_history_baseline.py` offline with the current explicit `StrategyParams` (-25/+75, 10:22 completed signal, next-bar bid/ask open, 12:00 NY hard exit, 80 model units, **zero *extra* slippage/commission**) produced **1,046 hypothetical trade days, 234 true no-trade signal days, and 25 excluded quote days** across five years. No simulated trade had a stop-and-target same-minute tie in this baseline pass. The ignored `historical_baseline.json` contains per-day hypothetical paths, not observed fill proofs; only coverage/status counts print to the console. **Do not interpret dollar results as broker account history, live profit, or validated fees.** The recent 2026 practice fill audit (steps 1–2) is a different window and does not verify 2020–2024 fills.
 
-## Gate before testing nine policies chronologically
+## Gate before treating nine-policy comparisons as evidence
+
+The retrospective nine-policy run and its exclusions are documented in [step 5](step5-rolling-diagnostics.md). It does **not** resolve the original-vendor, execution or prospective-data gates below.
 
 1. Document actual historical **instrument specifications, spreads, quote coverage/closures, costs/slippage** and exclusions; inspect the 11 incomplete sessions and 14 no-session days against the market calendar. In particular, do not assume a 2020/2024 `NAS100_USD` CFD point and USD conversion identical to old `NSXUSD`.
 2. Freeze chronological development/validation windows **before** comparing rules. Old historical notebook rankings were previously viewed and their underlying CSVs are absent, so 2020–2024 cannot be called an untouched holdout. Use identical eligible days, preserve no-trade days, stress costs and plausible same-minute ordering, and avoid automatically selecting the largest hypothetical result.

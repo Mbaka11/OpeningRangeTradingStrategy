@@ -82,7 +82,9 @@ def test_committed_notebook_never_contains_private_cached_outputs():
     notebook = nbformat.read(ROOT / "notebooks" / "06_exit_comparison.ipynb", as_version=4)
     assert any("what if?" in cell.source.lower() for cell in notebook.cells)
     for cell in notebook.cells:
+        assert not cell.get("attachments") and not cell.metadata.get("widgets")
         if cell.cell_type == "code":
             assert cell.execution_count is None
             assert cell.outputs == []
+    assert not notebook.metadata.get("widgets")
     assert "fills.json" not in json.dumps(notebook)
