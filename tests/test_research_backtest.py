@@ -8,8 +8,8 @@ import pytest
 import pandas as pd
 
 from opening_range_bot.run_bot import compute_signal
-from scripts.audit_backtest_parity import audit, compare_cloud_balances
-from scripts.export_oanda_research import ResearchDownloadError
+from scripts.research.audit_backtest_parity import audit, compare_cloud_balances
+from scripts.research.export_oanda_research import ResearchDownloadError
 from src.research_backtest import StrategyParams, run_session
 
 NY = ZoneInfo("America/New_York")

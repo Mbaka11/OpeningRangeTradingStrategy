@@ -6,14 +6,14 @@
 
 | Input | Code | Output |
 | --- | --- | --- |
-| Private, ignored `data/raw/oanda_research/START_END/{fills,candles}.json` from [step 1](step1-data-export.md) | `src/research_backtest.py` and `scripts/audit_backtest_parity.py` | Private, ignored `data/raw/oanda_research/START_END/baseline.json`: parameter snapshot, per-session signal/simulated exit, per-broker-trade USD check, aggregate counters. |
+| Private, ignored `data/raw/oanda_research/START_END/{fills,candles}.json` from [step 1](step1-data-export.md) | `src/research_backtest.py` and `scripts/research/audit_backtest_parity.py` | Private, ignored `data/raw/oanda_research/START_END/baseline.json`: parameter snapshot, per-session signal/simulated exit, per-broker-trade USD check, aggregate counters. |
 | Optional local, ignored `session_end_logs.json` with **filtered** Cloud Logging `SESSION_END` lines | `compare_cloud_balances` in the audit script | Account balance change vs. sum of OANDA realized P&L for covered days, inside the same private `baseline.json`. |
 | Original older yearly CSV files (**not available in this checkout**) | `src/or_core.py` (historical, mid-only), `notebooks/04_parameter_robustness.ipynb` | Future rerun of the old baseline/sweeps; no historical ranking can currently be reproduced. |
 
 Run against the already saved private export, **offline** (no new GET requests or token needed):
 
 ```bash
-python scripts/audit_backtest_parity.py --folder 2026-08-20_2026-09-24
+python scripts/research/audit_backtest_parity.py --folder 2026-08-20_2026-09-24
 ```
 
 To check account changes as well, first obtain *only* session-end log entries while Cloud Logging still retains them. In a shell with an authenticated `gcloud` CLI **and the local private export folder**, run:
@@ -23,7 +23,7 @@ gcloud logging read \
   'resource.type="cloud_run_job" AND resource.labels.job_name="opening-range-bot" AND textPayload:"SESSION_END" AND timestamp>="2026-08-20T00:00:00Z" AND timestamp<"2026-09-25T00:00:00Z"' \
   --project=onyx-seeker-479417-d5 --limit=100 --format=json \
   > data/raw/oanda_research/2026-08-20_2026-09-24/session_end_logs.json
-python scripts/audit_backtest_parity.py --folder 2026-08-20_2026-09-24 --session-logs
+python scripts/research/audit_backtest_parity.py --folder 2026-08-20_2026-09-24 --session-logs
 ```
 
 Do **not** post/share `session_end_logs.json` or `baseline.json`; account balances are private. Both Git and Cloud Build ignore the entire `data/` directory. You can rerun the offline audit after simulator changes; it updates **only** the ignored `baseline.json` in that export folder.

@@ -1,7 +1,7 @@
 # Predeclared first-pass offline exit candidates; NOT consumed by the live bot.
 # All numbers are index price points from the actual broker fill, never USD.
 # A candidate needs executable bid/ask paths and documented order semantics.
-protocol_version: 1
+protocol_version: 2 # Revised before the first candidate run: explicit cost cases + MC sample-size gate.
 status: research_only
 signal:
   opening_range_ny: "09:30-10:00"
@@ -15,7 +15,17 @@ common:
   ambiguous_same_bar: adverse_first
   evaluation_unit: eligible_session_including_no_trade
   price_series: executable_bid_ask
-  cost_cases: [broker_observed, spread_slippage_x2]
+  # Bid/ask candles already contain spread. These are modeling scenarios,
+  # NOT measured broker fees or an estimate of executable partial fills.
+  cost_cases:
+    - id: bid_ask_only
+      entry_slippage_points: 0
+      exit_slippage_points: 0
+      commission_per_side_usd: 0
+    - id: adverse_extra_1pt_per_fill
+      entry_slippage_points: 1
+      exit_slippage_points: 1
+      commission_per_side_usd: 2
   account_for_additional_partial_fill_costs: true
 candidates:
   - id: baseline_25_75
@@ -65,4 +75,6 @@ validation:
     repetitions: 2000
     seed: 20260926
     minimum_block: calendar_week
+    minimum_distinct_weeks: 26
+    minimum_baseline_trade_days: 100
   report_quantiles: [0.05, 0.50, 0.95]

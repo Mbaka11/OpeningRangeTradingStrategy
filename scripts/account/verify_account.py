@@ -1,12 +1,12 @@
 """
 Script to verify OANDA account connection, currency, and margin.
-Usage: python scripts/verify_account.py
+Usage: python scripts/account/verify_account.py
 """
 import sys
 from pathlib import Path
 
 # Add project root to path so we can import bot modules
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from opening_range_bot import broker_oanda
 from opening_range_bot.config import OANDA_ACCOUNT_ID, OANDA_ENV

@@ -102,6 +102,13 @@ def signal_for_session(bars: dict[datetime, dict], day: date, params: StrategyPa
             "or_high": or_high, "or_low": or_low, "top_cut": top_cut, "bottom_cut": bottom_cut}
 
 
+def exit_fill(level: float, quote_open: float, direction: int, slippage: float, *, is_stop: bool) -> tuple[float, bool]:
+    """Stop-market gaps fill at the worse open; limit targets never receive price improvement."""
+    gap = is_stop and direction * (quote_open - level) < 0
+    actual = quote_open if gap else level
+    return actual - direction * slippage, gap
+
+
 def run_session(day: str, candles: list[dict], params: StrategyParams) -> dict:
     """Research a single day; never treat missing quotes as a flat/no-trade day.
 
@@ -136,6 +143,7 @@ def run_session(day: str, candles: list[dict], params: StrategyParams) -> dict:
     t = entry_minute
     hard_exit = _minute(trade_date, params.exit_time)
     ambiguous = False
+    gap_through_stop = False
     while t < hard_exit:
         exit_bar = bars[t]["bid" if side == "long" else "ask"]
         high, low = float(exit_bar["h"]), float(exit_bar["l"])
@@ -144,7 +152,9 @@ def run_session(day: str, candles: list[dict], params: StrategyParams) -> dict:
         if touched_sl or touched_tp:
             ambiguous = touched_sl and touched_tp
             reason = "sl" if touched_sl else "tp"  # adverse same-minute tie
-            exit_price = (sl if touched_sl else tp) - direction * params.exit_slippage_points
+            exit_price, gap_through_stop = exit_fill(sl if touched_sl else tp,
+                                                     float(exit_bar["o"]), direction,
+                                                     params.exit_slippage_points, is_stop=touched_sl)
             exit_minute = t
             break
         t += timedelta(minutes=1)
@@ -160,5 +170,6 @@ def run_session(day: str, candles: list[dict], params: StrategyParams) -> dict:
             "sl_price": round(sl, 6), "tp_price": round(tp, 6),
             "exit_minute": exit_minute.isoformat(), "exit_price": round(exit_price, 6),
             "exit_reason": reason, "ambiguous_same_bar": ambiguous,
+            "gap_through_stop": gap_through_stop,
             "gross_points": round(gross_points, 6), "gross_usd": round(gross_usd, 6),
             "net_usd": round(net_usd, 6)}

@@ -1,11 +1,11 @@
 """
 Script to list all OANDA accounts accessible with the current API Token.
-Usage: python scripts/list_accounts.py
+Usage: python scripts/account/list_accounts.py
 """
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from opening_range_bot import broker_oanda
 from opening_range_bot.config import OANDA_ENV

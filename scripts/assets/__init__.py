@@ -1,0 +1,1 @@
+"""Local example asset generation."""

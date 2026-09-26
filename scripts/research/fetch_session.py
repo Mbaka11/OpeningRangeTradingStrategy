@@ -1,6 +1,6 @@
 """Fetch a specific session window (NY time) of M1 candles and save to CSV.
 Usage:
-  python scripts/fetch_session.py 2025-01-02
+  python scripts/research/fetch_session.py 2025-01-02
 saves to data/raw/replay_2025-01-02.csv
 """
 import sys
@@ -11,7 +11,7 @@ import pandas as pd
 import requests
 
 # Ensure repo root on path
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -88,6 +88,6 @@ def main(date_str):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python scripts/fetch_session.py YYYY-MM-DD")
+        print("Usage: python scripts/research/fetch_session.py YYYY-MM-DD")
         sys.exit(1)
     main(sys.argv[1])

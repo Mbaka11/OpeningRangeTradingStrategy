@@ -3,8 +3,8 @@ from datetime import date, datetime, timezone
 import json
 import pytest
 
-from scripts import export_oanda_research as exporter
-from scripts.export_oanda_research import (
+from scripts.research import export_oanda_research as exporter
+from scripts.research.export_oanda_research import (
     PracticeReader, ResearchDownloadError, _safe_page, sanitize_fill, validate_dates,
 )
 from src.research_parity import extract_trades, parse_time, reconcile, simulate_baseline

@@ -1,6 +1,6 @@
 """Offline research baseline audit from the ignored OANDA practice export.
 
-Usage: python scripts/audit_backtest_parity.py --folder 2026-08-20_2026-09-24
+Usage: python scripts/research/audit_backtest_parity.py --folder 2026-08-20_2026-09-24
 Never sends network requests or posts. This is NOT a strategy optimization.
 """
 
@@ -11,11 +11,11 @@ from pathlib import Path
 import re
 import sys
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.export_oanda_research import OUTPUT_ROOT, ResearchDownloadError, _private_json, _safe_output
+from scripts.research.export_oanda_research import OUTPUT_ROOT, ResearchDownloadError, _private_json, _safe_output
 from src.research_backtest import StrategyParams, run_session
 from src.research_parity import NY, broker_reason, extract_trades, parse_time
 

@@ -139,7 +139,7 @@ Keep the `.env` file out of version control; `.gitignore` already excludes it.
   - `broker_oanda.py` — thin OANDA client with practice/live environment support.
   - `data_feed.py` — OANDA candle polling, UTC→NY conversion, and minute-bar handling.
   - `logging_utils.py`, `notifier.py`, and `plotting.py` — runtime logging, alerts, and charts.
-- `scripts/` — session fetching, account checks, and log-analysis helpers.
+- `scripts/` — organized research, account, and asset tools plus unchanged deployment/legacy posting entry points; **read [`scripts/README.md`](scripts/README.md) before running one**.
 - `tests/` — automated strategy/runtime parity tests.
 - `logs/` — ignored mutable bot logs and daily summaries, created at runtime.
 - `docs/assets/` — tracked documentation-image location and usage guidance.
@@ -147,8 +147,8 @@ Keep the `.env` file out of version control; `.gitignore` already excludes it.
 ### Quick replay workflow (fetch a day and simulate)
 
 1. Fetch a session day (NY 09:00–13:00) to CSV (example for 2025-11-27):
-   - Linux/macOS/WSL: `python scripts/fetch_session.py 2025-11-27`
-   - PowerShell (Windows): `python scripts/fetch_session.py 2025-11-27`
+   - Linux/macOS/WSL: `python scripts/research/fetch_session.py 2025-11-27`
+   - PowerShell (Windows): `python scripts/research/fetch_session.py 2025-11-27`
      Output: `data/raw/replay_2025-11-27.csv`
 2. Run the bot in replay mode against that file (no live calls):
    - **Basic Replay (Logs only):**
@@ -166,7 +166,7 @@ Once the bot is running in Docker (see `DEPLOYMENT.md`), use these commands to v
 - **Verify Account & Margin:**
 
   ```bash
-  sudo docker exec trading-bot python scripts/verify_account.py
+  sudo docker exec trading-bot python scripts/account/verify_account.py
   ```
 
   _Checks connection to OANDA, confirms USD currency, and verifies sufficient margin (~$105k) for the strategy._
@@ -174,7 +174,7 @@ Once the bot is running in Docker (see `DEPLOYMENT.md`), use these commands to v
 - **List Available Accounts:**
 
   ```bash
-  sudo docker exec trading-bot python scripts/list_accounts.py
+  sudo docker exec trading-bot python scripts/account/list_accounts.py
   ```
 
   _Lists all sub-accounts your API token can access. Useful if you get 403 Forbidden errors._

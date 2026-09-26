@@ -33,7 +33,7 @@ Create per-trade and per-signal-day tables: broker P&L; signed mark-to-market at
 
 ## Phase 3 — Predeclare a small exit-policy matrix
 
-`research/experiments.yml` freezes the **first pass**. Same eligible signal days, same entry, same 25-point initial stop, same unit exposure, same noon flat and common transaction-cost scenarios for all candidates:
+`research/experiments.yml` predeclares the **first pass**. Protocol v2, revised before the first candidate run, names explicit modeled cost scenarios and sample-size gates without changing target levels. Same eligible signal days, same entry, same 25-point initial stop, same unit exposure, same noon flat and common transaction-cost scenarios for all candidates:
 
 | Family | Initial variants to compare | Trade-off / failure to watch |
 | --- | --- | --- |
@@ -63,10 +63,10 @@ Adam and RMSProp smooth **past gradients to optimize model parameters**. They ar
 
 ## Immediate next implementation slice
 
-Step 1's private broker export is documented in [`step1-data-export.md`](step1-data-export.md); step 2's explicit-parameter simulators and practice-account baseline checks are documented in [`step2-baseline.md`](step2-baseline.md). The remaining work below is not complete.
+Step 1's private export is in [`step1-data-export.md`](step1-data-export.md), step 2's baseline checks in [`step2-baseline.md`](step2-baseline.md), and step 3's **offline, exploratory-only** nine-policy engine and gated bootstrap in [`step3-exit-study.md`](step3-exit-study.md). See [`../scripts/README.md`](../scripts/README.md) for the reorganized safe entry points.
 
-1. Obtain and audit the original 2020–2024 yearly CSVs, re-run the corrected historical baseline, and explain the historical mid-only vs. practice bid/ask fill differences. Account-balance checks currently cover only Cloud-retained recent days; investigate any other/unresolved transactions. Do not claim an old optimum before its source data are reproduced.
-2. Implement **offline** partial fills/protective stops and a paired simulator with tested simultaneous-bar sequencing and transaction costs; the current step-2 simulator only scores fixed SL/TP/time exits.
-3. Run the frozen `experiments.yml` matrix and paired block-bootstrap study *after* the data/parity gates, publish aggregate reproducible tables under `reports/` locally (ignored by Git), and record a sanitized methodology in `research/`.
+1. Obtain/audit the original 2020–2024 yearly CSVs and ideally executable bid/ask or tick histories, re-run the corrected historical baseline, and document symbol/contract, timezone and fee differences. Account checks currently cover only Cloud-retained recent days; investigate unresolved exits.
+2. Use one common eligible sample for all policies and enough chronology for gated paired-week stress/walk-forward; the recent private practice sample has too few weeks/trades for Monte Carlo inference. Do not select a winner from the exploratory 19 clean paired days.
+3. Only after independent prospective paper validation, explicitly review broker-side partial orders/stops, idempotency/crash recovery, costs and posting implications before proposing any production change. No live policy change is approved by this research.
 
-**Safety:** all research processes are read-only/offline; do not invoke `gcloud run jobs execute`, `scripts/analyze_json_logs.py` (it posts to X), broker order endpoints or `REPLAY_TWEETS=true` for analysis.
+**Safety:** research scripts in `scripts/research/` are GET-only or offline; do not invoke `gcloud run jobs execute`, `scripts/analyze_json_logs.py` (it posts to X), broker order endpoints or `REPLAY_TWEETS=true` for analysis.

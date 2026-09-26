@@ -7,9 +7,9 @@ This step is **read-only**. The research exporter never invokes the Cloud Run Jo
 From the repository root, with the existing **practice** credentials in local `.env` (or `DOTENV_PATH`):
 
 ```bash
-python scripts/export_oanda_research.py --start 2026-08-20 --end 2026-09-24
+python scripts/research/export_oanda_research.py --start 2026-08-20 --end 2026-09-24
 # After editing only the offline reconciliation logic, no network/token required:
-python scripts/export_oanda_research.py --recheck 2026-08-20_2026-09-24
+python scripts/research/export_oanda_research.py --recheck 2026-08-20_2026-09-24
 ```
 
 Use completed **New York** dates only, no more than 62 calendar days at once. The exporter refuses live credentials, untrusted transaction-page URLs, redirects, overwrites of an existing export, and non-ignored output paths. On transient failure it retries GET only; if it still fails, it does not save a new export. `--recheck` recalculates the report from previously exported private files without network calls. To extend the sample later, use a **new** nonoverlapping date range.

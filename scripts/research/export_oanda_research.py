@@ -1,6 +1,6 @@
 """Bounded READ-ONLY OANDA practice export and baseline parity audit.
 
-Usage: python scripts/export_oanda_research.py --start 2026-09-24 --end 2026-09-25
+Usage: python scripts/research/export_oanda_research.py --start 2026-09-23 --end 2026-09-24
 No order APIs, X APIs or Cloud Run executions are called. Private outputs are
 stored under ignored data/raw/oanda_research/. Never post these files online.
 """
@@ -23,7 +23,7 @@ import requests
 from dotenv import dotenv_values
 from zoneinfo import ZoneInfo
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 from src.research_parity import extract_trades, parse_time, reconcile

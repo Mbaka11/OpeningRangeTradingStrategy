@@ -12,7 +12,7 @@ See [`tweet-flow-examples.md`](tweet-flow-examples.md) for the two supported pos
 Regenerate the example text and dark-theme charts with:
 
 ```bash
-python scripts/generate_example_assets.py
+python scripts/assets/generate_example_assets.py
 ```
 
 From the top-level `README.md`, reference an image with a relative Markdown path:
