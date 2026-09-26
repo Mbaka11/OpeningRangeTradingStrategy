@@ -1,0 +1,21 @@
+# Keep local broker research exports, credentials and private keys out of
+# gcloud builds submit source archives. Docker has its own .dockerignore.
+.git/
+.gcloudignore
+.env
+.env.*
+keys/
+data/
+reports/
+logs/
+venv/
+.venv/
+env/
+.tmp/
+tmp/
+.pi-subagents/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+*.ipynb

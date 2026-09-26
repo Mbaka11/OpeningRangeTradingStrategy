@@ -63,7 +63,9 @@ Adam and RMSProp smooth **past gradients to optimize model parameters**. They ar
 
 ## Immediate next implementation slice
 
-1. Write a read-only OANDA transaction/candle exporter (never commit tokens or raw responses), plus a summarized Cloud Logging import; reconcile the recent account outcomes first. If OANDA history or original 2020–2024 files are unavailable, record the limitation and do not pretend the old study is reproduced.
+Step 1's private read-only broker export and initial exit-classification audit are documented in [`step1-data-export.md`](step1-data-export.md). The remaining work below is not complete.
+
+1. Extend the read-only OANDA transaction/candle export (never commit tokens or raw responses) with a summarized Cloud Logging import and account-balance/cost reconciliation; investigate any unresolved cases. If OANDA history or original 2020–2024 files are unavailable, record the limitation and do not pretend the old study is reproduced.
 2. Add explicit-parameter simulator + synthetic tests proving sweep variants really differ, including long/short, simultaneous hits, DST/noon, spread/slippage, partial fills and broker exit classification.
 3. Produce a **baseline parity report**, then run the frozen `experiments.yml` matrix and paired block-bootstrap study; publish aggregate reproducible tables under `reports/` locally (ignored by Git), with a sanitized methodological summary in `research/`.
 
