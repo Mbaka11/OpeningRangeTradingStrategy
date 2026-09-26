@@ -6,7 +6,7 @@ The research scripts were grouped under [`../scripts/README.md`](../scripts/READ
 
 - **Input:** ignored, private step-1 `candles.json` (OANDA M1 mid/bid/ask), `parity.json` (definite broker exit checks), step-2 `baseline.json` (signal & broker P&L reconciliations), and versioned [`experiments.yml`](experiments.yml) (nine predeclared exit rules). Original historical 2020–2024 minute CSVs are still **absent**.
 - **Code:** pure offline `src/research_exits.py` and `src/research_uncertainty.py`, runner `scripts/research/run_exit_study.py`.
-- **Output:** ignored, **private** `data/raw/oanda_research/START_END/exit_study.json` containing day-by-day hypothetical paths, cost cases, shared paired eligibility, counts and descriptive outcomes. Only the **counts/status**, never private trade paths or a winner, print to the console. The report is not pushed to Git or uploaded in Cloud Build.
+- **Output:** ignored, **private** `data/raw/oanda_research/START_END/exit_study.json` containing day-by-day hypothetical paths, cost cases, shared paired eligibility, counts and descriptive outcomes. Only the **counts/status**, never private trade paths or a winner, print to the console. The report is not pushed to Git or uploaded in Cloud Build. For an accessible five-chart walk-through, use the **blank** [`../notebooks/06_exit_comparison.ipynb`](../notebooks/06_exit_comparison.ipynb) template, following [`../notebooks/README.md`](../notebooks/README.md) to execute only a locally ignored copy. The visualizations never change the production bot.
 
 From the repository root, after the step-1 exporter and step-2 baseline have completed:
 

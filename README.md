@@ -83,7 +83,7 @@ We will create a small **data contract** validator in the data-audit notebook (c
 - **Cost sensitivity:** Net vs. **fees + slippage** scenarios.
 - **Robustness:** Parameter sensitivity (OR window, SL/TP), walk-forward, Monte Carlo re-ordering of trades.
 
-For the current **research-only** exit/risk improvement protocol, data-reconciliation gates, and predeclared experiments, see [`research/README.md`](research/README.md). Do not use old parameter sweep rankings to change the deployed bot until backtest parameter overrides are verified (see the research plan).
+For the current **research-only** exit/risk protocol and data gates, see [`research/README.md`](research/README.md). For a visual explanation of the private, hypothetical nine-rule comparison, use the blank [`notebooks/06_exit_comparison.ipynb`](notebooks/06_exit_comparison.ipynb) template **only as an ignored local copy**; follow [`notebooks/README.md`](notebooks/README.md). Historical source CSVs are still missing; prior sweep rankings cannot justify a deployed change.
 
 ---
 

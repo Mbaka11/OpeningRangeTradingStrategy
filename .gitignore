@@ -21,6 +21,8 @@ pip-wheel-metadata/
 # --- Jupyter ---
 .ipynb_checkpoints/
 .profile/
+# Executed private research notebook copies (contain locally rendered results):
+notebooks/*.local.ipynb
 # (Optional) if you export large notebooks as HTML/PDF locally:
 *.nbconvert.ipynb
 

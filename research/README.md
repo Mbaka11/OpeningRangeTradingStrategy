@@ -63,7 +63,7 @@ Adam and RMSProp smooth **past gradients to optimize model parameters**. They ar
 
 ## Immediate next implementation slice
 
-Step 1's private export is in [`step1-data-export.md`](step1-data-export.md), step 2's baseline checks in [`step2-baseline.md`](step2-baseline.md), and step 3's **offline, exploratory-only** nine-policy engine and gated bootstrap in [`step3-exit-study.md`](step3-exit-study.md). See [`../scripts/README.md`](../scripts/README.md) for the reorganized safe entry points.
+Step 1's private export is in [`step1-data-export.md`](step1-data-export.md), step 2's baseline checks in [`step2-baseline.md`](step2-baseline.md), and step 3's **offline, exploratory-only** nine-policy engine and gated bootstrap in [`step3-exit-study.md`](step3-exit-study.md). For a human-readable visual walk-through, copy and run the blank [`../notebooks/06_exit_comparison.ipynb`](../notebooks/06_exit_comparison.ipynb) template *locally* per [`../notebooks/README.md`](../notebooks/README.md); never commit its executed output. See [`../scripts/README.md`](../scripts/README.md) for the reorganized safe entry points.
 
 1. Obtain/audit the original 2020–2024 yearly CSVs and ideally executable bid/ask or tick histories, re-run the corrected historical baseline, and document symbol/contract, timezone and fee differences. Account checks currently cover only Cloud-retained recent days; investigate unresolved exits.
 2. Use one common eligible sample for all policies and enough chronology for gated paired-week stress/walk-forward; the recent private practice sample has too few weeks/trades for Monte Carlo inference. Do not select a winner from the exploratory 19 clean paired days.
