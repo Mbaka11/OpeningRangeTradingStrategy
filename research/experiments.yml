@@ -1,0 +1,68 @@
+# Predeclared first-pass offline exit candidates; NOT consumed by the live bot.
+# All numbers are index price points from the actual broker fill, never USD.
+# A candidate needs executable bid/ask paths and documented order semantics.
+protocol_version: 1
+status: research_only
+signal:
+  opening_range_ny: "09:30-10:00"
+  entry_bar_ny: "10:22"
+  first_action: after_entry_bar_complete
+  hard_flat_ny: "12:00"
+common:
+  initial_stop_points: 25
+  initial_units_fraction: 1.0
+  one_signal_per_day: true
+  ambiguous_same_bar: adverse_first
+  evaluation_unit: eligible_session_including_no_trade
+  price_series: executable_bid_ask
+  cost_cases: [broker_observed, spread_slippage_x2]
+  account_for_additional_partial_fill_costs: true
+candidates:
+  - id: baseline_25_75
+    family: fixed
+    target_points: 75
+  - id: full_40
+    family: fixed
+    target_points: 40
+  - id: full_50
+    family: fixed
+    target_points: 50
+  - id: half_30_runner_75
+    family: partial
+    first_target_points: 30
+    first_exit_fraction: 0.5
+    remaining_target_points: 75
+    remaining_stop_points_from_entry: -25
+  - id: half_40_runner_75
+    family: partial
+    first_target_points: 40
+    first_exit_fraction: 0.5
+    remaining_target_points: 75
+    remaining_stop_points_from_entry: -25
+  - id: protect_30_runner_75
+    family: protect
+    activation_points: 30
+    new_stop_points_from_entry: 0 # Gross breakeven only; deduct all costs separately.
+    target_points: 75
+  - id: protect_40_runner_75
+    family: protect
+    activation_points: 40
+    new_stop_points_from_entry: 0
+    target_points: 75
+  - id: trail_40_by_20_runner_75
+    family: trailing
+    activation_points: 40
+    trailing_distance_points: 20
+    target_points: 75
+  - id: full_time_1115
+    family: time
+    exit_ny: "11:15"
+    target_points: 75
+validation:
+  baseline_parity_required: true
+  selection: chronological_rolling_origin_then_prospective_paper
+  paired_block_bootstrap:
+    repetitions: 2000
+    seed: 20260926
+    minimum_block: calendar_week
+  report_quantiles: [0.05, 0.50, 0.95]
