@@ -1,0 +1,34 @@
+# Frozen BEFORE running any 2020-2024 nine-policy historical comparison.
+# Previously viewed historic notebook years are retrospective DEVELOPMENT,
+# never an untouched holdout. New practice sessions are prospective only.
+protocol_version: 1
+status: retrospective_diagnostics_only
+source: oanda_practice_NAS100_USD_M1_MBA_2020_2024
+candidate_manifest: research/experiments.yml
+candidate_protocol_version: 2
+folds:
+  - id: through_2021_check_2022
+    development_years: [2020, 2021]
+    evaluation_year: 2022
+  - id: through_2022_check_2023
+    development_years: [2020, 2021, 2022]
+    evaluation_year: 2023
+  - id: through_2023_check_2024
+    development_years: [2020, 2021, 2022, 2023]
+    evaluation_year: 2024
+common_sample:
+  include_no_trade_days_as_zero: true
+  exclude_incomplete_and_no_quote_weekdays: true
+  exclude_if_any_candidate_in_any_cost_case_is_ambiguous: true
+  require_same_entry_and_side_for_all_candidates_per_cost_case: true
+  require_same_eligible_dates_across_both_cost_cases: true
+metrics:
+  primary: paired_mean_net_usd_per_eligible_session
+  descriptive: [paired_total_net_usd_difference, paired_mean_points_per_initial_unit,
+                candidate_max_drawdown_usd, worst_week_usd, worst_5pct_daily_mean_usd,
+                trade_days, no_trade_days, additional_closing_fills, stop_amendments]
+  no_annualized_sharpe: true
+uncertainty: use_experiments_yml_week_bootstrap_only_if_26_weeks_and_100_baseline_trades
+selection: none
+no_automatic_promotion: true
+future_untouched_confirmation: new_prospective_practice_sessions_only
