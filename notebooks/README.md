@@ -22,6 +22,8 @@ Both tracked templates have **zero saved execution outputs**. Executed notebooks
    python -m jupyter lab notebooks/07_historical_rolling_verified.local.ipynb
    ```
 
+The offline [step-6 execution/cost audit](../research/step6-execution-audit.md) is a separate diagnostic (`python scripts/research/audit_historical_execution.py`), not a new performance experiment or altered notebook-07 sample. It writes only an ignored private report and does not update the older study or charts.
+
 3. Run the *local copy* top-to-bottom, or open the already locally rendered `.local.ipynb` file. For notebook 06 you may change `FOLDER_NAME`, `COST_CASE` or `EXAMPLE_DAY`; for notebook 07, change `COST_CASE` to the other declared assumption. A private report already exists on this checkout—offline scripts refuse to overwrite it without explicit `--replace-private`; normally just open the local notebook instead.
 
 `git check-ignore notebooks/07_historical_rolling_verified.local.ipynb` must confirm the executed copy is ignored. Notebook 07 re-audits saved quote, baseline, protocol and simulator-code hashes locally before plotting; an earlier `07_historical_rolling_diagnostics.local.ipynb` copy made before this stricter freshness check may still be on disk—prefer the **verified** copy, and do not overwrite other private work. **Do not commit/share/export/upload screenshots, private quote data, executed notebooks or broker history.** The tests reject cached results in the tracked templates. `.gcloudignore` excludes all `.ipynb` files and `data/`, and `.dockerignore` excludes notebooks/data. Old notebooks 02–05 refer to the **missing original NSXUSD CSVs** and cached historical rankings were invalidated; do not treat them as proof of an optimum.

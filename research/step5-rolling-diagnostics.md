@@ -37,6 +37,8 @@ The evaluation-year primary samples contain **211 (2022), 234 (2023) and 224 (20
 
 ## Remaining gate before any strategy discussion
 
+The follow-up [step-6 offline execution audit](step6-execution-audit.md) classifies these flags, rechecks cost/unit ledgers and records cash-calendar/halt context. It does **not** alter the original sample, certify broker fills or close the historical cost gates below.
+
 1. Independently check the 11 incomplete and 14 no-quote historical weekdays against actual OANDA market-hours/holiday records; confirm **2020–2024** CFD contract USD/point and realistic spreads/fees/slippage. Recover original `NSXUSD` vendor CSVs if reproducing old notebooks is required; OANDA history is a **different** dataset.
 2. Resolve or bound **partial/stop amendment feasibility and the 151 ambiguous days** with finer quote/tick/execution evidence. M1 highs do not prove that a broker would fill those hypothetical orders; simulated gross entry-price stop is not net breakeven after costs.
 3. Freeze a simple candidate **only after** evidence survives common-sample and inclusive sensitivity, credible costs, drawdown and multiple-comparison review; then collect genuinely **new** prospective paper sessions (the previously examined 2026 practice sample is not an untouched holdout). Any production change needs explicit approval, broker-side crash-safe stops, durable idempotency, and unchanged X posting cadence unless separately approved. **The live 25/75 practice bot stays unchanged.**

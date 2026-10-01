@@ -1,0 +1,105 @@
+# POST-HOC mechanism/data-quality diagnostic, after step 5 exclusions were seen.
+# Not another performance experiment, execution bound or revised primary sample.
+protocol_version: 1
+status: posthoc_execution_diagnostics_only
+selection: none
+change_primary_sample: false
+change_exit_or_cost_rules: false
+network_in_runner: false
+calendar_basis: US_cash_equity_context_NOT_OANDA_CFD_quote_schedule
+sources:
+  nyse_2020_notice:
+    url: https://ir.theice.com/press/news-details/2019/NYSE-Group-Announces-2020-2021-and-2022-Holiday-and-Early-Closings-Calendar/default.aspx
+    evidence: not_transcribed_http403
+    # Below 2020 dates are standard-calendar HYPOTHESES, NOT attested by the inaccessible page.
+  nyse_2021_table:
+    url: https://www.nasdaq.com/press-release/nyse-group-announces-2021-2022-and-2023-holiday-and-early-closings-calendar-2020-12
+    evidence: official_ICE_release_table_transcribed
+    published: "2020-12-28"
+  nyse_2022_2024_table:
+    url: https://s2.q4cdn.com/154085107/files/doc_news/NYSE-Group-Announces-2022-2023-and-2024-Holiday-and-Early-Closings-Calendar-2021.pdf
+    evidence: official_ICE_release_table_transcribed
+    published: "2021-12-27"
+    # This later table includes Juneteenth; the 2020 release above did not.
+  nyse_mwcb_report:
+    url: https://www.nyse.com/publicdocs/nyse/markets/nyse/Report_of_the_Market-Wide_Circuit_Breaker_Working_Group.pdf
+    evidence: official_working_group_report_transcribed_pages_4_5
+    time_basis: America/New_York
+    # Page numbers are the report's printed numbers (PDF pages 5-6).
+calendar_years:
+  "2020":
+    source: nyse_2020_notice
+    verification: hypothesis_not_independently_transcribed
+    full_cash_equity_closures:
+      "2020-01-01": New_Year
+      "2020-01-20": Martin_Luther_King_Jr
+      "2020-02-17": Washington_Birthday
+      "2020-04-10": Good_Friday
+      "2020-05-25": Memorial_Day
+      "2020-07-03": Independence_Day_observed
+      "2020-09-07": Labor_Day
+      "2020-11-26": Thanksgiving
+      "2020-12-25": Christmas
+  "2021":
+    source: nyse_2021_table
+    verification: official_table_transcribed
+    full_cash_equity_closures:
+      "2021-01-01": New_Year
+      "2021-01-18": Martin_Luther_King_Jr
+      "2021-02-15": Washington_Birthday
+      "2021-04-02": Good_Friday
+      "2021-05-31": Memorial_Day
+      "2021-07-05": Independence_Day_observed
+      "2021-09-06": Labor_Day
+      "2021-11-25": Thanksgiving
+      "2021-12-24": Christmas_observed
+  "2022":
+    source: nyse_2022_2024_table
+    verification: official_table_transcribed
+    # No NYSE New-Year closure observed Dec 31, 2021 / Jan 3, 2022 (Rule 7.2).
+    full_cash_equity_closures:
+      "2022-01-17": Martin_Luther_King_Jr
+      "2022-02-21": Washington_Birthday
+      "2022-04-15": Good_Friday
+      "2022-05-30": Memorial_Day
+      "2022-06-20": Juneteenth_observed
+      "2022-07-04": Independence_Day
+      "2022-09-05": Labor_Day
+      "2022-11-24": Thanksgiving
+      "2022-12-26": Christmas_observed
+  "2023":
+    source: nyse_2022_2024_table
+    verification: official_table_transcribed
+    full_cash_equity_closures:
+      "2023-01-02": New_Year_observed
+      "2023-01-16": Martin_Luther_King_Jr
+      "2023-02-20": Washington_Birthday
+      "2023-04-07": Good_Friday
+      "2023-05-29": Memorial_Day
+      "2023-06-19": Juneteenth
+      "2023-07-04": Independence_Day
+      "2023-09-04": Labor_Day
+      "2023-11-23": Thanksgiving
+      "2023-12-25": Christmas
+  "2024":
+    source: nyse_2022_2024_table
+    verification: official_table_transcribed
+    full_cash_equity_closures:
+      "2024-01-01": New_Year
+      "2024-01-15": Martin_Luther_King_Jr
+      "2024-02-19": Washington_Birthday
+      "2024-03-29": Good_Friday
+      "2024-05-27": Memorial_Day
+      "2024-06-19": Juneteenth
+      "2024-07-04": Independence_Day
+      "2024-09-02": Labor_Day
+      "2024-11-28": Thanksgiving
+      "2024-12-25": Christmas
+cash_equity_halts:
+  "2020-03-09": {start_ny: "09:34:13", end_ny: "09:49:13", source: nyse_mwcb_report}
+  "2020-03-12": {start_ny: "09:35:44", end_ny: "09:50:44", source: nyse_mwcb_report}
+  "2020-03-16": {start_ny: "09:30:01", end_ny: "09:45:01", source: nyse_mwcb_report}
+  "2020-03-18": {start_ny: "12:56:17", end_ny: "13:11:17", source: nyse_mwcb_report}
+# Calendar/halts contextualize missingness; they do not repair quotes or prove its cause.
+# OANDA's historical entity-specific schedule, latency, fills, contract multiplier,
+# commissions, financing/dividend adjustments and native trailing semantics remain gates.
