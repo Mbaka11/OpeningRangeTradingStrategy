@@ -51,7 +51,7 @@ Today's USD NAS100 instrument metadata supports **80 and 40 units** under the re
 
 ## Remaining historical and execution gates
 
-The current/recent snapshot cannot close the step-6 historical or amendment/partial-order gates. Seek **private, dated evidence or written OANDA confirmation** for:
+The current/recent snapshot cannot close the step-6 historical or amendment/partial-order gates. Because the user does not know their agreement's entity, [step 8](step8-broker-evidence-request.md) supplies a copy-ready support request and redaction/evidence boundaries; **it has not been sent and passes no historical gate**. Seek **private, dated evidence or written OANDA confirmation** for:
 
 1. This account's legal counterparty/entity, v20 platform offering and **2020–2024** NAS100 contract multiplier/quote currency/units, precision/minimum-size changes and commissions/minimum fees. No other regional/platform tariff should be substituted.
 2. Whether an absent cost field means unsupported/not reported/zero for the relevant API/account version; guaranteed-fee cash sign, financing/dividend booking modes and any separate adjustments not visible in fill components.
