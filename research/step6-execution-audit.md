@@ -56,6 +56,8 @@ Partial close and a following stop replacement are **separate requests**, not on
 
 ## Next safe gates
 
+The separately authorized [step-7 current/recent cost snapshot](step7-current-cost-evidence.md) obtains selected account-scoped metadata and previously inspected fill-cost fields. It can improve recent evidence, but does **not** establish the 2020–2024 terms or test broker-side amendments/partials.
+
 1. Obtain entity/account-specific **historical** NAS100 specifications, commissions/adjustments and hours/outage records (private evidence or OANDA confirmation). Current public docs cannot close these gates. Finer quotes/ticks alone still do not prove request latency or partial fills.
 2. Before testing an alternative, explicitly specify **completed-bar vs intrabar/native** amendments and partial market-vs-limit semantics, then propose a separate authorized broker-practice test with crash-safe/idempotent protection. This is not authorization to amend existing practice trades or start another trading bot.
 3. Once semantics/costs are credible, review the original primary and post-hoc inclusive evidence, multiple comparisons, and drawdown **without retuning the already-viewed years**. Any candidate freeze and genuinely new prospective shadow protocol need a separate decision. No winner, forecast probability, extra X posts or automatic strategy promotion follows from this audit.
